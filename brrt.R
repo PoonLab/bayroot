@@ -128,24 +128,44 @@ hyper <- list(
 init.p <- list(rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
 
 
-# TODO: let user specify tuning parameters (delta, origin norm sd)
+
+#' mh - Metropolis-Hastings sampler
+#' TODO: let user specify proposal distribution parameters
+#' @param nstep {integer}:  number of steps in chain sample
+#' @param phy {ape:phylo}:  starting tree, rooted
+#' @param tip.dates {Date}:  vector of Date objects corresponding to tip.labels
+#' @param init.p {list}:  initial parameter settings
+#' @param hyper {list}:  hyperparameters for prior distributions
 mh <- function(nstep, phy, tip.dates, init.p, hyper) {
   # unpack parameters
-  origin <- init.p$origin
-  rate <- init.p$rate
+  params <- list(origin=init.p$origin, rate=init.p$rate, phy=phy)
+  next.params <- list(origin=init.p$origin, rate=init.p$rate, phy=phy)
   
   # posterior probability of initial state
-  pp <- lf(phy, origin=origin, rate=rate, tip.dates=tip.dates)
+  pp <- lf(params$phy, origin=params$origin, rate=params$rate, 
+           tip.dates=tip.dates)
   
   # propagate chain sample
   for (i in 1:nstep) {
     # proposal
     u <- runif(1)
-    if (u < 0.25) {
-      phy <- shift.root(phy, delta=0.001)
+    if (u < 0.5) {
+      next.params$phy <- shift.root(phy, delta=0.001)
     }
-    else if (u < 0.5) {
-      origin <- rnorm(1, mean=origin, sd=5)
+    else if (u < 0.75) {
+      next.params$origin <- rnorm(1, mean=origin, sd=7)  # days
+    }
+    else {
+      next.params$rate <- rlnorm(1, meanlog=log(rate), sdlog=0.1)
+    }
+    
+    next.pp <- lf(next.params$phy, origin=next.params$origin, 
+                  rate=next.params$rate, tip.dates=tip.dates)
+    ratio <- next.pp/pp
+    if (ratio >= 1 | ) {
+      # accept proposal
+      params <- next.params
+      
     }
   }
 }
