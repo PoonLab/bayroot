@@ -30,7 +30,7 @@ shift.root <- function(phy, delta=NA) {
   clen <- phy$edge.length[which(phy$edge[,2] == child)]
   
   while (TRUE) {
-    print(paste(root, child, clen, step))
+    #print(paste(root, child, clen, step))
     
     if (step > clen) {
       # step exceeds branch length
@@ -62,10 +62,9 @@ shift.root <- function(phy, delta=NA) {
 
 
 #set.seed(1); phy <- rtree(5); write.tree(phy)
-phy <- read.tree(text="(t2:0.06178627047,((t1:0.6870228467,(t3:0.76984142,t4:0.4976992421):0.3841037182):0.1765567525,t5:0.7176185083):0.2059745749);")
-
-par(mfrow=c(1,2))
-plot(phy); plot(proposal(phy, delta=0.5))
+#phy <- read.tree(text="(t2:0.06178627047,((t1:0.6870228467,(t3:0.76984142,t4:0.4976992421):0.3841037182):0.1765567525,t5:0.7176185083):0.2059745749);")
+#par(mfrow=c(1,2))
+#plot(phy); plot(proposal(phy, delta=0.5))
 
 
 
@@ -147,26 +146,36 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper) {
   
   # propagate chain sample
   for (i in 1:nstep) {
+    print(paste(i, pp, params$origin, params$rate))
+    
     # proposal
     u <- runif(1)
     if (u < 0.5) {
-      next.params$phy <- shift.root(phy, delta=0.001)
+      next.params$phy <- shift.root(params$phy, delta=0.001)
     }
     else if (u < 0.75) {
-      next.params$origin <- rnorm(1, mean=origin, sd=7)  # days
+      next.params$origin <- as.Date(as.integer(rnorm(1, mean=params$origin, sd=7)), 
+                                    origin='1970-01-01')
     }
     else {
-      next.params$rate <- rlnorm(1, meanlog=log(rate), sdlog=0.1)
+      next.params$rate <- rlnorm(1, meanlog=log(params$rate), sdlog=0.1)
     }
     
     next.pp <- lf(next.params$phy, origin=next.params$origin, 
                   rate=next.params$rate, tip.dates=tip.dates)
+    print(paste("next.pp", next.pp))
+    if (is.infinite(next.pp)) {
+      stop(next.params)
+    }
+    
     ratio <- next.pp/pp
-    if (ratio >= 1 | ) {
+    if (ratio >= 1 | runif(1) < ratio) {
       # accept proposal
       params <- next.params
-      
+      pp <- next.pp
     }
   }
 }
+
+mh(5, phy, tip.dates, init.p, hyper)
 
