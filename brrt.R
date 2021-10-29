@@ -1,5 +1,6 @@
 require(ape)
 require(phytools)
+require(msm)
 
 
 #' shift.root
@@ -67,18 +68,6 @@ shift.root <- function(phy, delta=NA) {
 #plot(phy); plot(proposal(phy, delta=0.5))
 
 
-
-# TODO: calculate likelihood of rooted tree by regressing divergence on dates
-setwd('~/git/brrt')
-phy <- read.tree('data/ZM1044M.fa.hyp.treefile')
-phy <- midpoint.root(phy)
-
-# parse tip dates
-tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
-tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
-
-
-
 # TODO: Metropolis-Hastings - from another package?
 
 #' lf - likelihood function
@@ -143,6 +132,7 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper) {
   # posterior probability of initial state
   pp <- lf(params$phy, origin=params$origin, rate=params$rate, 
            tip.dates=tip.dates)
+  min.date <- min(tip.dates, na.rm=T)
   
   # propagate chain sample
   for (i in 1:nstep) {
@@ -152,18 +142,17 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper) {
     u <- runif(1)
     if (u < 0.5) {
       next.params$phy <- shift.root(params$phy, delta=0.001)
-    }
-    else if (u < 0.75) {
-      next.params$origin <- as.Date(as.integer(rnorm(1, mean=params$origin, sd=7)), 
-                                    origin='1970-01-01')
-    }
-    else {
+    } else if (u < 0.75) {
+      next.params$origin <- as.Date(round(
+        rtnorm(1, mean=as.integer(params$origin), sd=7, upper=as.integer(min.date)-1)
+        ), origin='1970-01-01')
+    } else {
       next.params$rate <- rlnorm(1, meanlog=log(params$rate), sdlog=0.1)
     }
     
     next.pp <- lf(next.params$phy, origin=next.params$origin, 
                   rate=next.params$rate, tip.dates=tip.dates)
-    print(paste("next.pp", next.pp))
+    #print(paste("next.pp", next.pp))
     if (is.infinite(next.pp)) {
       stop(next.params)
     }
@@ -177,5 +166,16 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper) {
   }
 }
 
-mh(5, phy, tip.dates, init.p, hyper)
+
+
+setwd('~/git/brrt')
+phy <- read.tree('data/ZM1044M.fa.hyp.treefile')
+phy <- midpoint.root(phy)
+
+# parse tip dates
+tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
+tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
+
+set.seed(2)
+mh(30, phy, tip.dates, init.p, hyper)
 
