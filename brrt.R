@@ -2,13 +2,13 @@ require(ape)
 require(phytools)
 
 
-#' proposal
+#' shift.root
 #' Reroot the input tree by moving along the branches by step size
 #' drawn from uniform (0, delta).  If this step crosses an internal
 #' node, go up the left branch with probability 0.5.
 #' @param phy {ape::phylo}:  input rooted tree
 #' @param delta {double}:  maximum step size, s.t. proposal is U(-delta, delta)
-proposal <- function(phy, delta=NA) {
+shift.root <- function(phy, delta=NA) {
   if (!is.rooted(phy)) {
     stop("Input tree must be rooted.")
   }
@@ -70,5 +70,83 @@ plot(phy); plot(proposal(phy, delta=0.5))
 
 
 # TODO: calculate likelihood of rooted tree by regressing divergence on dates
+setwd('~/git/brrt')
+phy <- read.tree('data/ZM1044M.fa.hyp.treefile')
+phy <- midpoint.root(phy)
+
+# parse tip dates
+tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
+tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
+
+
 
 # TODO: Metropolis-Hastings - from another package?
+
+#' lf - likelihood function
+#' Calculate likelihood of divergences given input tree and sampling 
+#' times.  Assume a linear relationship between divergence and time.
+#' TODO: relax this assumption with a Poisson correction (as per Jukes-
+#' Cantor).  Employ Poisson distributions centered on this trend line 
+#' with variance equal to mean.
+#' TODO: relax this assumption, use negative binomial distribution?
+#' @param phy {ape:phylo}:  input rooted tree
+#' @param origin {double}:  date at root
+#' @param rate {double}:  mutation rate, i.e., slope of linear regression
+#' @param tip.dates {numeric}:  
+lf <- function(phy, origin, rate, tip.dates) {
+  # extract tip distances from root
+  div <- node.depth.edgelength(phy)[1:Ntip(phy)]  # indexed as in phy$tip.label
+  
+  # time differences from origin, in days
+  delta.t <- as.integer(tip.dates - origin)
+  
+  # compute Poisson model
+  sum(div * log(rate*delta.t) - (rate*delta.t) - lgamma(div*1), na.rm=T)
+}
+
+#' prior probability
+#' We assume origin and rate are independent.
+#' @param origin {double}:  origin date
+#' @param rate {double}:  mutation rate
+#' @param hyper {list}:  hyperparameters for prior distributions
+#'    origin:  dnorm(mean, sd)
+#'    rate:  dlnorm(meanlog, sdlog)
+prior <- function(origin, rate, hyper) {
+  dnorm(as.integer(origin), as.integer(hyper['mean']), hyper['sd']) *
+    dlnorm(hyper['meanlog'], hyper['sdlog'])
+}
+
+# use date of seroconversion to inform prior
+hyper <- list(
+  mean=min(tip.dates, na.rm=T), 
+  sd=30,  # days
+  meanlog=-10,
+  sdlog=2
+  )
+
+
+init.p <- list(rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
+
+
+# TODO: let user specify tuning parameters (delta, origin norm sd)
+mh <- function(nstep, phy, tip.dates, init.p, hyper) {
+  # unpack parameters
+  origin <- init.p$origin
+  rate <- init.p$rate
+  
+  # posterior probability of initial state
+  pp <- lf(phy, origin=origin, rate=rate, tip.dates=tip.dates)
+  
+  # propagate chain sample
+  for (i in 1:nstep) {
+    # proposal
+    u <- runif(1)
+    if (u < 0.25) {
+      phy <- shift.root(phy, delta=0.001)
+    }
+    else if (u < 0.5) {
+      origin <- rnorm(1, mean=origin, sd=5)
+    }
+  }
+}
+
