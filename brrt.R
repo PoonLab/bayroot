@@ -43,7 +43,7 @@ shift.root <- function(phy, delta=NA) {
         phy <- reroot(phy, child)   # reroot at tip
         
         # update child
-        prev.root <- phy$edge[1,][phy$edge[,2] == child]
+        prev.root <- phy$edge[,1][phy$edge[,2] == child]
         children <- phy$edge[which(phy$edge[,1]==prev.root), 2]
         child <- sample(list(children[children != child]), 1)[[1]]
       }
@@ -177,5 +177,5 @@ tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4])
 tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
 
 set.seed(2)
-mh(30, phy, tip.dates, init.p, hyper)
+mh(100, phy, tip.dates, init.p, hyper)
 
