@@ -118,13 +118,20 @@ init.p <- list(rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
 
 
 #' mh - Metropolis-Hastings sampler
+#' 
 #' TODO: let user specify proposal distribution parameters
+#' TODO: pass file paths to write logs
+#' 
 #' @param nstep {integer}:  number of steps in chain sample
 #' @param phy {ape:phylo}:  starting tree, rooted
 #' @param tip.dates {Date}:  vector of Date objects corresponding to tip.labels
 #' @param init.p {list}:  initial parameter settings
 #' @param hyper {list}:  hyperparameters for prior distributions
-mh <- function(nstep, phy, tip.dates, init.p, hyper) {
+#' @param log.skip {integer}:  number of steps between log entries
+#' @param treelog.skip {integer}:  number of steps between treelog entries
+#' 
+#' @return {data.frame, character}:  log, treelog
+mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=10) {
   # unpack parameters
   params <- list(origin=init.p$origin, rate=init.p$rate, phy=phy)
   next.params <- list(origin=init.p$origin, rate=init.p$rate, phy=phy)
@@ -134,20 +141,24 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper) {
            tip.dates=tip.dates)
   min.date <- min(tip.dates, na.rm=T)
   
+  # prepare logs
+  log <- data.frame(step=0, posterior=pp, origin=params$origin, rate=params$rate)
+  treelog <- c(write.tree(params$phy))
+    
   # propagate chain sample
   for (i in 1:nstep) {
-    print(paste(i, pp, params$origin, params$rate))
-    
     # proposal
-    u <- runif(1)
-    if (u < 0.5) {
-      next.params$phy <- shift.root(params$phy, delta=0.001)
-    } else if (u < 0.75) {
-      next.params$origin <- as.Date(round(
-        rtnorm(1, mean=as.integer(params$origin), sd=7, upper=as.integer(min.date)-1)
+    next.params$phy <- shift.root(params$phy, delta=0.001)
+    next.params$origin <- as.Date(round(
+        rtnorm(1, mean=as.integer(params$origin), sd=10, upper=as.integer(min.date)-1)
         ), origin='1970-01-01')
-    } else {
-      next.params$rate <- rlnorm(1, meanlog=log(params$rate), sdlog=0.1)
+    
+    rate.delta <- runif(1, min=-1e-6, max=1e-6)
+    if (rate.delta <= -params$rate) {
+      next.params$rate <- -(rate.delta - params$rate)  # reflect
+    }
+    else {
+      next.params$rate <- params$rate + rate.delta
     }
     
     next.pp <- lf(next.params$phy, origin=next.params$origin, 
@@ -163,7 +174,14 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper) {
       params <- next.params
       pp <- next.pp
     }
+    
+    # update logs
+    if (i %% log.skip == 0) {
+      log <- rbind(log, list(i, pp, params$origin, params$rate))
+      treelog <- c(treelog, write.tree(params$phy))
+    }
   }
+  return(list(log=log, treelog=treelog))
 }
 
 
@@ -177,5 +195,8 @@ tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4])
 tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
 
 set.seed(2)
-mh(100, phy, tip.dates, init.p, hyper)
+results <- mh(1e5, phy, tip.dates, init.p, hyper, log.skip=100, treelog.skip=1000)
 
+plot(results$log$step, results$log$posterior, type='l')
+plot(results$log$step, results$log$origin, type='l')
+plot(results$log$step, results$log$rate, type='l')
