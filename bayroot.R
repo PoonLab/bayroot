@@ -101,8 +101,9 @@ lf <- function(phy, origin, rate, tip.dates) {
 #'    rate:  dlnorm(meanlog, sdlog)
 prior <- function(origin, rate, hyper) {
   #dnorm(as.integer(origin), as.integer(hyper['mean']), hyper['sd']) *
-  dunif(as.integer(origin), as.integer(hyper['mindate']), asinteger()) *
-    dlnorm(hyper['meanlog'], hyper['sdlog'])
+  max(0, dunif(as.integer(origin), min=as.integer(hyper$mindate),
+        max=as.integer(hyper$maxdate), log=T)) + 
+    dlnorm(rate, meanlog=hyper$meanlog, sdlog=hyper$sdlog, log=T)
 }
 
 
@@ -130,12 +131,15 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=1
   next.params <- list(origin=init.p$origin, rate=init.p$rate, phy=phy)
   
   # posterior probability of initial state
-  pp <- lf(params$phy, origin=params$origin, rate=params$rate, 
+  llk <- lf(params$phy, origin=params$origin, rate=params$rate, 
            tip.dates=tip.dates)
+  lprior <- prior(origin=params$origin, rate=params$rate, hyper=hyper)
+  lpost <- llk + lprior
   min.date <- min(tip.dates, na.rm=T)
   
   # prepare logs
-  log <- data.frame(step=0, posterior=pp, origin=params$origin, rate=params$rate)
+  log <- data.frame(step=0, posterior=lpost, logL=llk, prior=lprior, 
+                    origin=params$origin, rate=params$rate)
   treelog <- c(write.tree(params$phy))
     
   # propagate chain sample
@@ -149,28 +153,30 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=1
     rate.delta <- runif(1, min=-1e-6, max=1e-6)
     if (rate.delta <= -params$rate) {
       next.params$rate <- -(rate.delta - params$rate)  # reflect
-    }
-    else {
+    } else {
       next.params$rate <- params$rate + rate.delta
     }
     
-    next.pp <- lf(next.params$phy, origin=next.params$origin, 
+    next.llk <- lf(next.params$phy, origin=next.params$origin, 
                   rate=next.params$rate, tip.dates=tip.dates)
-    #print(paste("next.pp", next.pp))
-    if (is.infinite(next.pp)) {
+    next.lprior <- prior(origin=next.params$origin, rate=next.params$rate, hyper=hyper)
+    next.lpost <- next.llk + next.lprior
+    if (is.infinite(next.lpost)) {
       stop(next.params)
     }
     
-    ratio <- next.pp/pp
+    ratio <- exp(next.lpost - lpost)
     if (ratio >= 1 | runif(1) < ratio) {
       # accept proposal
       params <- next.params
-      pp <- next.pp
+      lpost <- next.lpost
+      llk <- next.llk
+      lprior <- next.lprior
     }
     
     # update logs
     if (i %% log.skip == 0) {
-      log <- rbind(log, list(i, pp, params$origin, params$rate))
+      log <- rbind(log, list(i, lpost, llk, lprior, params$origin, params$rate))
       treelog <- c(treelog, write.tree(params$phy))
     }
   }
@@ -191,14 +197,15 @@ tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
 
 # use date of seroconversion to inform prior
 hyper <- list(
-  min.date=as.Date("2005-11-29"),  # last HIV -ve
-  max.date=as.Date("2006-03-25"),  # first HIV +ve
+  mindate=as.Date("2005-11-29"),  # last HIV -ve
+  maxdate=as.Date("2006-03-25"),  # first HIV +ve
   meanlog=-10.14,  # Alizon and Fraser, 10^-1.84 sub/nt/year 
-  sdlog= # (Alizon and Fraser, 95% CI: 10^-2.78 - 10^-1.28)
+  sdlog=1 # (Alizon and Fraser, 95% CI: 10^-2.78 - 10^-1.28)
 )
 
 set.seed(2)
-results <- mh(1e5, phy, tip.dates, init.p, hyper, log.skip=100, treelog.skip=1000)
+results <- mh(1e3, phy, tip.dates, init.p, hyper)
+#results <- mh(1e5, phy, tip.dates, init.p, hyper, log.skip=100, treelog.skip=1000)
 
 plot(results$log$step, results$log$posterior, type='l')
 plot(results$log$step, results$log$origin, type='l')
