@@ -100,17 +100,10 @@ lf <- function(phy, origin, rate, tip.dates) {
 #'    origin:  dnorm(mean, sd)
 #'    rate:  dlnorm(meanlog, sdlog)
 prior <- function(origin, rate, hyper) {
-  dnorm(as.integer(origin), as.integer(hyper['mean']), hyper['sd']) *
+  #dnorm(as.integer(origin), as.integer(hyper['mean']), hyper['sd']) *
+  dunif(as.integer(origin), as.integer(hyper['mindate']), asinteger()) *
     dlnorm(hyper['meanlog'], hyper['sdlog'])
 }
-
-# use date of seroconversion to inform prior
-hyper <- list(
-  mean=min(tip.dates, na.rm=T), 
-  sd=30,  # days
-  meanlog=-10,
-  sdlog=2
-  )
 
 
 init.p <- list(rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
@@ -185,14 +178,24 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=1
 }
 
 
+# work through test case ZM1044M - https://doi.org/10.1371/journal.ppat.1008378
 
 setwd('~/git/brrt')
+# screened for hypermutation, aligned (MAFFT) and reconstructed tree (IQTREE)
 phy <- read.tree('data/ZM1044M.fa.hyp.treefile')
 phy <- midpoint.root(phy)
 
 # parse tip dates
 tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
 tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
+
+# use date of seroconversion to inform prior
+hyper <- list(
+  min.date=as.Date("2005-11-29"),  # last HIV -ve
+  max.date=as.Date("2006-03-25"),  # first HIV +ve
+  meanlog=-10.14,  # Alizon and Fraser, 10^-1.84 sub/nt/year 
+  sdlog= # (Alizon and Fraser, 95% CI: 10^-2.78 - 10^-1.28)
+)
 
 set.seed(2)
 results <- mh(1e5, phy, tip.dates, init.p, hyper, log.skip=100, treelog.skip=1000)
