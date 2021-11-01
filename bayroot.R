@@ -101,7 +101,7 @@ lf <- function(phy, origin, rate, tip.dates) {
 #'    rate:  dlnorm(meanlog, sdlog)
 prior <- function(origin, rate, hyper) {
   #dnorm(as.integer(origin), as.integer(hyper['mean']), hyper['sd']) *
-  max(0, dunif(as.integer(origin), min=as.integer(hyper$mindate),
+  max(-1e9, dunif(as.integer(origin), min=as.integer(hyper$mindate),
         max=as.integer(hyper$maxdate), log=T)) + 
     dlnorm(rate, meanlog=hyper$meanlog, sdlog=hyper$sdlog, log=T)
 }
@@ -177,6 +177,8 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=1
     # update logs
     if (i %% log.skip == 0) {
       log <- rbind(log, list(i, lpost, llk, lprior, params$origin, params$rate))
+    }
+    if (i %% treelog.skip == 0) {
       treelog <- c(treelog, write.tree(params$phy))
     }
   }
@@ -186,7 +188,7 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=1
 
 # work through test case ZM1044M - https://doi.org/10.1371/journal.ppat.1008378
 
-setwd('~/git/brrt')
+setwd('~/git/bayroot')
 # screened for hypermutation, aligned (MAFFT) and reconstructed tree (IQTREE)
 phy <- read.tree('data/ZM1044M.fa.hyp.treefile')
 phy <- midpoint.root(phy)
@@ -199,13 +201,17 @@ tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
 hyper <- list(
   mindate=as.Date("2005-11-29"),  # last HIV -ve
   maxdate=as.Date("2006-03-25"),  # first HIV +ve
-  meanlog=-10.14,  # Alizon and Fraser, 10^-1.84 sub/nt/year 
-  sdlog=1 # (Alizon and Fraser, 95% CI: 10^-2.78 - 10^-1.28)
+  meanlog=-10.14,  # Alizon and Fraser, 10^-1.84 = 0.0144 sub/nt/year 
+  sdlog=1 # (Alizon and Fraser, 95% CI: 0.00166 - 0.0525)
 )
+# > x <- rlnorm(1e5, -10.14, 1)
+# > quantile(x, c(0.025, 0.5, 0.975))
+# 2.5%          50%        97.5% 
+# 5.554873e-06 3.961559e-05 2.832975e-04
 
 set.seed(2)
-results <- mh(1e3, phy, tip.dates, init.p, hyper)
-#results <- mh(1e5, phy, tip.dates, init.p, hyper, log.skip=100, treelog.skip=1000)
+#results <- mh(1e3, phy, tip.dates, init.p, hyper)
+results <- mh(1e5, phy, tip.dates, init.p, hyper, log.skip=100, treelog.skip=1000)
 
 plot(results$log$step, results$log$posterior, type='l')
 plot(results$log$step, results$log$origin, type='l')
