@@ -86,6 +86,8 @@ lf <- function(phy, origin, rate, tip.dates) {
   div <- node.depth.edgelength(phy)[1:Ntip(phy)]  # indexed as in phy$tip.label
   
   # time differences from origin, in days
+  tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
+  tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
   delta.t <- as.integer(tip.dates - origin)
   
   # compute Poisson model
@@ -101,7 +103,7 @@ lf <- function(phy, origin, rate, tip.dates) {
 #'    rate:  dlnorm(meanlog, sdlog)
 prior <- function(origin, rate, hyper) {
   #dnorm(as.integer(origin), as.integer(hyper['mean']), hyper['sd']) *
-  max(0, dunif(as.integer(origin), min=as.integer(hyper$mindate),
+  max(-1e60, dunif(as.integer(origin), min=as.integer(hyper$mindate),
         max=as.integer(hyper$maxdate), log=T)) + 
     dlnorm(rate, meanlog=hyper$meanlog, sdlog=hyper$sdlog, log=T)
 }
@@ -125,14 +127,16 @@ init.p <- list(rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
 #' @param treelog.skip {integer}:  number of steps between treelog entries
 #' 
 #' @return {data.frame, character}:  log, treelog
-mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=10) {
+mh <- function(nstep, phy, init.p, hyper, log.skip=10, treelog.skip=10) {
   # unpack parameters
   params <- list(origin=init.p$origin, rate=init.p$rate, phy=phy)
   next.params <- list(origin=init.p$origin, rate=init.p$rate, phy=phy)
   
+  tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
+  tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
+  
   # posterior probability of initial state
-  llk <- lf(params$phy, origin=params$origin, rate=params$rate, 
-           tip.dates=tip.dates)
+  llk <- lf(params$phy, origin=params$origin, rate=params$rate)
   lprior <- prior(origin=params$origin, rate=params$rate, hyper=hyper)
   lpost <- llk + lprior
   min.date <- min(tip.dates, na.rm=T)
@@ -145,20 +149,20 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=1
   # propagate chain sample
   for (i in 1:nstep) {
     # proposal
-    next.params$phy <- shift.root(params$phy, delta=0.001)
+    next.params$phy <- shift.root(params$phy, delta=hyper$root.delta)
     next.params$origin <- as.Date(round(
-        rtnorm(1, mean=as.integer(params$origin), sd=10, upper=as.integer(min.date)-1)
+        rtnorm(1, mean=as.integer(params$origin), sd=hyper$date.sd, 
+               upper=as.integer(min.date)-1)
         ), origin='1970-01-01')
     
-    rate.delta <- runif(1, min=-1e-6, max=1e-6)
+    rate.delta <- runif(1, min=-hyper$rate.delta, max=hyper$rate.delta)
     if (rate.delta <= -params$rate) {
       next.params$rate <- -(rate.delta - params$rate)  # reflect
     } else {
       next.params$rate <- params$rate + rate.delta
     }
     
-    next.llk <- lf(next.params$phy, origin=next.params$origin, 
-                  rate=next.params$rate, tip.dates=tip.dates)
+    next.llk <- lf(next.params$phy, origin=next.params$origin, rate=next.params$rate)
     next.lprior <- prior(origin=next.params$origin, rate=next.params$rate, hyper=hyper)
     next.lpost <- next.llk + next.lprior
     if (is.infinite(next.lpost)) {
@@ -177,6 +181,8 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=1
     # update logs
     if (i %% log.skip == 0) {
       log <- rbind(log, list(i, lpost, llk, lprior, params$origin, params$rate))
+    }
+    if (i %% treelog.skip == 0) {
       treelog <- c(treelog, write.tree(params$phy))
     }
   }
@@ -186,27 +192,34 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=1
 
 # work through test case ZM1044M - https://doi.org/10.1371/journal.ppat.1008378
 
-setwd('~/git/brrt')
+setwd('~/git/bayroot')
 # screened for hypermutation, aligned (MAFFT) and reconstructed tree (IQTREE)
 phy <- read.tree('data/ZM1044M.fa.hyp.treefile')
-phy <- midpoint.root(phy)
+#phy <- midpoint.root(phy)
 
 # parse tip dates
 tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
 tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
+phy <- reroot(phy, which.min(tip.dates))
 
 # use date of seroconversion to inform prior
 hyper <- list(
   mindate=as.Date("2005-11-29"),  # last HIV -ve
   maxdate=as.Date("2006-03-25"),  # first HIV +ve
   meanlog=-10.14,  # Alizon and Fraser, 10^-1.84 sub/nt/year 
-  sdlog=1 # (Alizon and Fraser, 95% CI: 10^-2.78 - 10^-1.28)
+  sdlog=1, # (Alizon and Fraser, 95% CI: 10^-2.78 - 10^-1.28)
+  
+  root.delta=0.01,
+  date.sd=10,  # days
+  rate.delta=1e-6
 )
 
 set.seed(2)
-results <- mh(1e3, phy, tip.dates, init.p, hyper)
+results <- mh(1e3, phy, init.p, hyper)
 #results <- mh(1e5, phy, tip.dates, init.p, hyper, log.skip=100, treelog.skip=1000)
 
-plot(results$log$step, results$log$posterior, type='l')
-plot(results$log$step, results$log$origin, type='l')
+plot(results$log$step[10:nrow(results$log)], 
+     results$log$posterior[10:nrow(results$log)], type='l')
+plot(results$log$step[10:nrow(results$log)], 
+     results$log$origin[10:nrow(results$log)], type='l')
 plot(results$log$step, results$log$rate, type='l')
