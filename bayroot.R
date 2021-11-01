@@ -6,9 +6,15 @@ require(msm)
 #' shift.root
 #' Reroot the input tree by moving along the branches by step size
 #' drawn from uniform (0, delta).  If this step crosses an internal
-#' node, go up the left branch with probability 0.5.
+#' node, go up one of the child branches at random.
 #' @param phy {ape::phylo}:  input rooted tree
 #' @param delta {double}:  maximum step size, s.t. proposal is U(-delta, delta)
+#' 
+#' @example 
+#' set.seed(1)
+#' phy <- rtree(5)
+#' par(mfrow=c(1,2))
+#' plot(phy); plot(proposal(phy, delta=0.5))
 shift.root <- function(phy, delta=NA) {
   if (!is.rooted(phy)) {
     stop("Input tree must be rooted.")
@@ -31,8 +37,6 @@ shift.root <- function(phy, delta=NA) {
   clen <- phy$edge.length[which(phy$edge[,2] == child)]
   
   while (TRUE) {
-    #print(paste(root, child, clen, step))
-    
     if (step > clen) {
       # step exceeds branch length
       root <- child
@@ -61,36 +65,40 @@ shift.root <- function(phy, delta=NA) {
 }
 
 
+get.dates <- function(phy) {
+  tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
+  tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
+  return (tip.dates)
+}
 
-#set.seed(1); phy <- rtree(5); write.tree(phy)
-#phy <- read.tree(text="(t2:0.06178627047,((t1:0.6870228467,(t3:0.76984142,t4:0.4976992421):0.3841037182):0.1765567525,t5:0.7176185083):0.2059745749);")
-#par(mfrow=c(1,2))
-#plot(phy); plot(proposal(phy, delta=0.5))
-
-
-# TODO: Metropolis-Hastings - from another package?
 
 #' lf - likelihood function
 #' Calculate likelihood of divergences given input tree and sampling 
-#' times.  Assume a linear relationship between divergence and time.
-#' TODO: relax this assumption with a Poisson correction (as per Jukes-
-#' Cantor).  Employ Poisson distributions centered on this trend line 
+#' times.  Assume a linear relationship between divergence and time with 
+#' slope {rate} and x-intercept {origin}.
+#' Employ Poisson distributions centered on this trend line 
 #' with variance equal to mean.
-#' TODO: relax this assumption, use negative binomial distribution?
+#' 
+#' TODO: relax linear trend assumption with a Poisson correction (as per Jukes-
+#' Cantor).  
+#' TODO: relax Poisson assumption, use negative binomial distribution?
+#' 
 #' @param phy {ape:phylo}:  input rooted tree
 #' @param origin {double}:  date at root
 #' @param rate {double}:  mutation rate, i.e., slope of linear regression
-#' @param tip.dates {numeric}:  
-lf <- function(phy, origin, rate, tip.dates) {
+#' @return {double}:  log-likelihood
+lf <- function(phy, origin, rate) {
   # extract tip distances from root
   div <- node.depth.edgelength(phy)[1:Ntip(phy)]  # indexed as in phy$tip.label
   
   # time differences from origin, in days
+  tip.dates <- get.dates(phy)
   delta.t <- as.integer(tip.dates - origin)
   
   # compute Poisson model
-  sum(div * log(rate*delta.t) - (rate*delta.t) - lgamma(div*1), na.rm=T)
+  sum(div * log(rate*delta.t) - (rate*delta.t) - lgamma(div+1), na.rm=T)
 }
+
 
 #' prior probability
 #' We assume origin and rate are independent.
@@ -101,14 +109,10 @@ lf <- function(phy, origin, rate, tip.dates) {
 #'    rate:  dlnorm(meanlog, sdlog)
 prior <- function(origin, rate, hyper) {
   #dnorm(as.integer(origin), as.integer(hyper['mean']), hyper['sd']) *
-  max(-1e9, dunif(as.integer(origin), min=as.integer(hyper$mindate),
+  max(-1e50, dunif(as.integer(origin), min=as.integer(hyper$mindate),
         max=as.integer(hyper$maxdate), log=T)) + 
     dlnorm(rate, meanlog=hyper$meanlog, sdlog=hyper$sdlog, log=T)
 }
-
-
-init.p <- list(rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
-
 
 
 #' mh - Metropolis-Hastings sampler
@@ -120,21 +124,21 @@ init.p <- list(rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
 #' @param phy {ape:phylo}:  starting tree, rooted
 #' @param tip.dates {Date}:  vector of Date objects corresponding to tip.labels
 #' @param init.p {list}:  initial parameter settings
-#' @param hyper {list}:  hyperparameters for prior distributions
+#' @param settings {list}:  hyperparameters for prior distributions and proposal settings
 #' @param log.skip {integer}:  number of steps between log entries
 #' @param treelog.skip {integer}:  number of steps between treelog entries
 #' 
 #' @return {data.frame, character}:  log, treelog
-mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=10) {
-  # unpack parameters
-  params <- list(origin=init.p$origin, rate=init.p$rate, phy=phy)
-  next.params <- list(origin=init.p$origin, rate=init.p$rate, phy=phy)
+mh <- function(nstep, params, settings, log.skip=10, treelog.skip=10) {
+  # deep copy
+  next.params <- list(origin=params$origin, rate=params$rate, phy=params$phy)
   
   # posterior probability of initial state
-  llk <- lf(params$phy, origin=params$origin, rate=params$rate, 
-           tip.dates=tip.dates)
-  lprior <- prior(origin=params$origin, rate=params$rate, hyper=hyper)
+  llk <- lf(params$phy, origin=params$origin, rate=params$rate)
+  lprior <- prior(origin=params$origin, rate=params$rate, hyper=settings)
   lpost <- llk + lprior
+  
+  tip.dates <- get.dates(params$phy)
   min.date <- min(tip.dates, na.rm=T)
   
   # prepare logs
@@ -145,21 +149,21 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=1
   # propagate chain sample
   for (i in 1:nstep) {
     # proposal
-    next.params$phy <- shift.root(params$phy, delta=0.001)
+    next.params$phy <- shift.root(params$phy, delta=settings$root.delta)
     next.params$origin <- as.Date(round(
-        rtnorm(1, mean=as.integer(params$origin), sd=10, upper=as.integer(min.date)-1)
+        rtnorm(1, mean=as.integer(params$origin), sd=settings$date.sd, 
+               upper=as.integer(min.date)-1)
         ), origin='1970-01-01')
     
-    rate.delta <- runif(1, min=-1e-6, max=1e-6)
+    rate.delta <- runif(1, min=-settings$rate.delta, max=settings$rate.delta)
     if (rate.delta <= -params$rate) {
       next.params$rate <- -(rate.delta - params$rate)  # reflect
     } else {
       next.params$rate <- params$rate + rate.delta
     }
     
-    next.llk <- lf(next.params$phy, origin=next.params$origin, 
-                  rate=next.params$rate, tip.dates=tip.dates)
-    next.lprior <- prior(origin=next.params$origin, rate=next.params$rate, hyper=hyper)
+    next.llk <- lf(next.params$phy, origin=next.params$origin, rate=next.params$rate)
+    next.lprior <- prior(origin=next.params$origin, rate=next.params$rate, hyper=settings)
     next.lpost <- next.llk + next.lprior
     if (is.infinite(next.lpost)) {
       stop(next.params)
@@ -191,28 +195,60 @@ mh <- function(nstep, phy, tip.dates, init.p, hyper, log.skip=10, treelog.skip=1
 setwd('~/git/bayroot')
 # screened for hypermutation, aligned (MAFFT) and reconstructed tree (IQTREE)
 phy <- read.tree('data/ZM1044M.fa.hyp.treefile')
-phy <- midpoint.root(phy)
+#phy <- midpoint.root(phy)
 
 # parse tip dates
-tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
-tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
+tip.dates <- get.dates(phy)
+phy <- reroot(phy, which.min(tip.dates))
 
 # use date of seroconversion to inform prior
-hyper <- list(
+settings <- list(
+  # hyperparameters
   mindate=as.Date("2005-11-29"),  # last HIV -ve
   maxdate=as.Date("2006-03-25"),  # first HIV +ve
   meanlog=-10.14,  # Alizon and Fraser, 10^-1.84 = 0.0144 sub/nt/year 
-  sdlog=1 # (Alizon and Fraser, 95% CI: 0.00166 - 0.0525)
+  sdlog=1, # (Alizon and Fraser, 95% CI: 0.00166 - 0.0525)
+  
+  # proposal function parameters
+  root.delta=0.01,
+  date.sd=10,  # days
+  rate.delta=1e-6
 )
 # > x <- rlnorm(1e5, -10.14, 1)
-# > quantile(x, c(0.025, 0.5, 0.975))
-# 2.5%          50%        97.5% 
-# 5.554873e-06 3.961559e-05 2.832975e-04
+# > quantile(365*x, c(0.025, 0.5, 0.975))
+# 2.5%         50%       97.5% 
+# 0.002027529 0.014459692 0.103403591 
+
+
+init.p <- list(phy=phy, rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
+
 
 set.seed(2)
-#results <- mh(1e3, phy, tip.dates, init.p, hyper)
-results <- mh(1e5, phy, tip.dates, init.p, hyper, log.skip=100, treelog.skip=1000)
+results <- mh(1e5, params=init.p, settings=settings, log.skip=100, treelog.skip=1000)
+#results <- mh(1e5, phy, tip.dates, init.p, hyper, log.skip=100, treelog.skip=1000)
 
-plot(results$log$step, results$log$posterior, type='l')
-plot(results$log$step, results$log$origin, type='l')
+plot(results$log$step[10:nrow(results$log)], 
+     results$log$posterior[10:nrow(results$log)], type='l')
+
+plot(results$log$step[10:nrow(results$log)], 
+     results$log$origin[10:nrow(results$log)], type='l')
+
 plot(results$log$step, results$log$rate, type='l')
+
+plot(read.tree(text=results$treelog[20]), cex=0.5)
+
+
+check.state <- function(results, step) {
+  phy <- read.tree(text=results$treelog[step])
+  div <- node.depth.edgelength(phy)[1:Ntip(phy)]
+  tip.dates <- get.dates(phy)
+  
+  plot(tip.dates, div)
+}
+  
+
+
+
+
+
+
