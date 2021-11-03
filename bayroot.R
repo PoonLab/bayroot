@@ -1,7 +1,7 @@
 require(ape)
 require(phytools)
 require(msm)
-
+require(ggfree)
 
 #' shift.root
 #' Reroot the input tree by moving along the branches by step size
@@ -65,9 +65,11 @@ shift.root <- function(phy, delta=NA) {
 }
 
 
-get.dates <- function(phy) {
+get.dates <- function(phy, censor=TRUE) {
   tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
-  tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
+  if (censor) {
+    tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
+  }
   return (tip.dates)
 }
 
@@ -96,7 +98,7 @@ lf <- function(phy, origin, rate) {
   delta.t <- as.integer(tip.dates - origin)
   
   # compute Poisson model
-  sum(div * log(rate*delta.t) - (rate*delta.t) - lgamma(div+1), na.rm=T)
+  sum(div*log(rate*delta.t) - (rate*delta.t) - lgamma(div+1), na.rm=T)
 }
 
 
@@ -186,7 +188,9 @@ mh <- function(nstep, params, settings, log.skip=10, treelog.skip=10) {
       treelog <- c(treelog, write.tree(params$phy))
     }
   }
-  return(list(log=log, treelog=treelog))
+  result <- list(log=log, treelog=treelog)
+  class(result) <- 'bayroot'
+  return(result)
 }
 
 
@@ -210,7 +214,7 @@ settings <- list(
   sdlog=1, # (Alizon and Fraser, 95% CI: 0.00166 - 0.0525)
   
   # proposal function parameters
-  root.delta=0.01,
+  root.delta=0.001,
   date.sd=10,  # days
   rate.delta=1e-6
 )
@@ -224,31 +228,60 @@ init.p <- list(phy=phy, rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
 
 
 set.seed(2)
-results <- mh(1e5, params=init.p, settings=settings, log.skip=100, treelog.skip=1000)
-#results <- mh(1e5, phy, tip.dates, init.p, hyper, log.skip=100, treelog.skip=1000)
-
-plot(results$log$step[10:nrow(results$log)], 
-     results$log$posterior[10:nrow(results$log)], type='l')
-
-plot(results$log$step[10:nrow(results$log)], 
-     results$log$origin[10:nrow(results$log)], type='l')
-
-plot(results$log$step, results$log$rate, type='l')
-
-plot(read.tree(text=results$treelog[20]), cex=0.5)
+#results <- mh(1e3, params=init.p, settings=settings)
+results <- mh(1e5, params=init.p, settings=settings, log.skip=100, treelog.skip=100)
 
 
-check.state <- function(results, step) {
-  phy <- read.tree(text=results$treelog[step])
-  div <- node.depth.edgelength(phy)[1:Ntip(phy)]
-  tip.dates <- get.dates(phy)
-  
-  plot(tip.dates, div)
+#' generic S3 plot for bayroot class
+plot.bayroot <- function(obj, step=NA, burnin=1) {
+  if (is.na(step)) {
+    orig.par <- par(mfrow=c(3,2))
+    end <- nrow(obj$log)
+    x <- obj$log$step[burnin:end]
+    
+    y <- obj$log$posterior[burnin:end]
+    plot(x, y, type='l', xlab='Step', ylab='Posterior')
+    hist(y, main='Posterior')
+    
+    y <- obj$log$origin[burnin:end]
+    plot(x, y, type='l', xlab='Step', ylab='Origin')
+    hist(y, breaks='week', main='Origin (x-intercept)')
+    
+    y <- obj$log$rate[burnin:end]
+    plot(x, y, type='l', xlab='Step', ylab='Rate')
+    hist(y, main='Rate (slope)')
+    
+    par(orig.par)
+  }
+  else{
+    phy <- read.tree(text=obj$treelog[step])
+    div <- node.depth.edgelength(phy)[1:Ntip(phy)]
+    tip.dates <- get.dates(phy, censor=FALSE)
+    origin <- obj$log$origin[step]
+    rate <- obj$log$rate[step]
+    
+    orig.par <- par(mfrow=c(1,2))
+    plot(tree.layout(phy), mar=c(1,1,1,5), cex=0.5)
+    par(mar=c(5,5,1,1))
+    plot(tip.dates, div, col=ifelse(grepl("_DNA_", phy$tip.label), 'red', 'black'),
+         ylim=c(0, max(div)), xlab='Sample collection date', ylab='Divergence')
+    segments(x0=origin, y0=0, x1=max(tip.dates), y1= rate * (max(tip.dates) - origin))
+    par(orig.par)
+  }
 }
-  
 
 
-
+#' generic S3 predict for class bayroot
+#' Extract sample of parameters (tree, origin, rate) from chain sample.
+#' Given origin and rate, calculate the expected sampling time 
+#' for divergence of censored tips (DNA) for each tree.
+predict.bayroot <- function(obj) {
+  phy <- read.tree(text=obj$treelog[step])
+  div <- node.depth.edgelength(phy)[1:Ntip(phy)]
+  origin <- obj$log$origin[step]
+  rate <- obj$log$rate[step]
+  list(y=origin + div/rate, x=get.dates(phy, censor=FALSE))
+}
 
 
 
