@@ -194,43 +194,6 @@ mh <- function(nstep, params, settings, log.skip=10, treelog.skip=10) {
 }
 
 
-# work through test case ZM1044M - https://doi.org/10.1371/journal.ppat.1008378
-
-setwd('~/git/bayroot')
-# screened for hypermutation, aligned (MAFFT) and reconstructed tree (IQTREE)
-phy <- read.tree('data/ZM1044M.fa.hyp.treefile')
-#phy <- midpoint.root(phy)
-
-# parse tip dates
-tip.dates <- get.dates(phy)
-phy <- reroot(phy, which.min(tip.dates))
-
-# use date of seroconversion to inform prior
-settings <- list(
-  # hyperparameters
-  mindate=as.Date("2005-11-29"),  # last HIV -ve
-  maxdate=as.Date("2006-03-25"),  # first HIV +ve
-  meanlog=-10.14,  # Alizon and Fraser, 10^-1.84 = 0.0144 sub/nt/year 
-  sdlog=1, # (Alizon and Fraser, 95% CI: 0.00166 - 0.0525)
-  
-  # proposal function parameters
-  root.delta=0.001,
-  date.sd=10,  # days
-  rate.delta=1e-6
-)
-# > x <- rlnorm(1e5, -10.14, 1)
-# > quantile(365*x, c(0.025, 0.5, 0.975))
-# 2.5%         50%       97.5% 
-# 0.002027529 0.014459692 0.103403591 
-
-
-init.p <- list(phy=phy, rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
-
-
-set.seed(2)
-#results <- mh(1e3, params=init.p, settings=settings)
-results <- mh(1e5, params=init.p, settings=settings, log.skip=100, treelog.skip=100)
-
 
 #' generic S3 plot for bayroot class
 plot.bayroot <- function(obj, step=NA, burnin=1) {
@@ -272,16 +235,64 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 
 
 #' generic S3 predict for class bayroot
+#' 
 #' Extract sample of parameters (tree, origin, rate) from chain sample.
 #' Given origin and rate, calculate the expected sampling time 
 #' for divergence of censored tips (DNA) for each tree.
+#' 
 predict.bayroot <- function(obj) {
+  step <- 10  # work in progress, eventually do a sample of states
   phy <- read.tree(text=obj$treelog[step])
+  tip.dates <- get.dates(phy, censor=FALSE)
   div <- node.depth.edgelength(phy)[1:Ntip(phy)]
   origin <- obj$log$origin[step]
   rate <- obj$log$rate[step]
+  delta.t <- tip.dates - origin
+  
+  # calculate expected time 
+  
   list(y=origin + div/rate, x=get.dates(phy, censor=FALSE))
 }
+
+
+
+
+# work through test case ZM1044M - https://doi.org/10.1371/journal.ppat.1008378
+
+setwd('~/git/bayroot')
+# screened for hypermutation, aligned (MAFFT) and reconstructed tree (IQTREE)
+phy <- read.tree('data/ZM1044M.fa.hyp.treefile')
+#phy <- midpoint.root(phy)
+
+# parse tip dates
+tip.dates <- get.dates(phy)
+phy <- reroot(phy, which.min(tip.dates))
+
+# use date of seroconversion to inform prior
+settings <- list(
+  # hyperparameters
+  mindate=as.Date("2005-11-29"),  # last HIV -ve
+  maxdate=as.Date("2006-03-25"),  # first HIV +ve
+  meanlog=-10.14,  # = log(0.0144 sub/nt/yr / 365), Alizon and Fraser
+  sdlog=1,  # Alizon and Fraser, 95% CI: 0.00166 - 0.0525
+  
+  # proposal function parameters
+  root.delta=0.001,
+  date.sd=10,  # days
+  rate.delta=1e-6
+)
+# > x <- rlnorm(1e6, -10.14, 1)
+# > quantile(365*x, c(0.025, 0.5, 0.975))
+# 2.5%         50%       97.5% 
+# 0.002027529 0.014459692 0.103403591 
+
+
+init.p <- list(phy=phy, rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
+
+
+set.seed(2)
+#results <- mh(1e3, params=init.p, settings=settings)
+results <- mh(1e5, params=init.p, settings=settings, log.skip=100, treelog.skip=100)
 
 
 
