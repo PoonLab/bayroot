@@ -234,6 +234,13 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 }
 
 
+#' short hand for lower incomplete gamma function, i.e.,
+#' \int_0^x t^(a-1) \exp(-t) dt
+ligamma <- function(a, x) {
+  pgamma(x, a) * gamma(a)
+}
+
+
 #' generic S3 predict for class bayroot
 #' 
 #' Extract sample of parameters (tree, origin, rate) from chain sample.
@@ -242,15 +249,19 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 #' 
 predict.bayroot <- function(obj) {
   step <- 10  # work in progress, eventually do a sample of states
+  
   phy <- read.tree(text=obj$treelog[step])
-  tip.dates <- get.dates(phy, censor=FALSE)
+  tip.dates <- get.dates(phy)
+  min.date <- min(tip.dates, na.rm=T)
+  max.date <- max(tip.dates, na.rm=T)  # most recent RNA sample
+  
   div <- node.depth.edgelength(phy)[1:Ntip(phy)]
   origin <- obj$log$origin[step]
   rate <- obj$log$rate[step]
   delta.t <- tip.dates - origin
   
   # calculate expected time 
-  
+  py <- ligamma(div+1, rate * (max.date - min.date)) / (rate*gamma(div+1))
   list(y=origin + div/rate, x=get.dates(phy, censor=FALSE))
 }
 
