@@ -234,9 +234,10 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 }
 
 
+
 #' short hand for lower incomplete gamma function, i.e.,
-#' \int_0^x t^(a-1) \exp(-t) dt
-ligamma <- function(a, x) {
+#' \int_0^x t^(a-1) exp(-t) dt
+inc.gamma <- function(a, x) {
   pgamma(x, a) * gamma(a)
 }
 
@@ -249,23 +250,25 @@ ligamma <- function(a, x) {
 #' 
 predict.bayroot <- function(obj) {
   step <- 10  # work in progress, eventually do a sample of states
-  
+
+  # process tree at this step
   phy <- read.tree(text=obj$treelog[step])
-  tip.dates <- get.dates(phy)
-  min.date <- min(tip.dates, na.rm=T)
-  max.date <- max(tip.dates, na.rm=T)  # most recent RNA sample
-  
   div <- node.depth.edgelength(phy)[1:Ntip(phy)]
+
+  tip.dates <- get.dates(phy, censor=TRUE)
+  min.date <- min(tip.dates, na.rm=T)
+  # FIXME: actually this should be limited by sample date of censored tip
+  max.date <- max(tip.dates, na.rm=T)
+
   origin <- obj$log$origin[step]
+  dt <- max.date - min.date
   rate <- obj$log$rate[step]
-  delta.t <- tip.dates - origin
   
   # calculate expected time 
-  py <- ligamma(div+1, rate * (max.date - min.date)) / (rate*gamma(div+1))
+  exp.t <- min.date + 1/rate * inc.gamma(div+2, rate*dt) / inc.gamma(div+1, rate*dt)
+  
   list(y=origin + div/rate, x=get.dates(phy, censor=FALSE))
 }
-
-
 
 
 # work through test case ZM1044M - https://doi.org/10.1371/journal.ppat.1008378
@@ -278,6 +281,38 @@ phy <- read.tree('data/ZM1044M.fa.hyp.treefile')
 # parse tip dates
 tip.dates <- get.dates(phy)
 phy <- reroot(phy, which.min(tip.dates))
+
+
+##############  test PDF  ##############
+pdf <- function(t, y, rate, t0, tmax) {
+  # probability of integration time (t) given divergence (y)
+  L <- as.double(rate*(t-t0))
+  rate * L^y * exp(-L) / inc.gamma(y+1, as.double(rate*(tmax-t0)))
+}
+
+origin <- as.Date("2006-01-26")  # sero midpoint
+tip.dates <- get.dates(phy, censor=TRUE)
+max.date <- max(tip.dates, na.rm=T)
+x <- seq(origin, max.date, length.out=100)
+
+y1 <- pdf(x, 0.001, 1e-5, min.date, max.date)
+y2 <- pdf(x, 0.01, 1e-5, min.date, max.date)
+y3 <- pdf(x, 0.1, 1e-5, min.date, max.date)
+
+h <- 1/as.integer(max.date - min.date)
+par(mfrow=c(1,3), cex.lab=1.2)
+plot(x, y1, type='l', xlab='Sampling date', ylab='Probability density',
+     main=0.001)
+abline(h=h, lty=2)
+plot(x, y, type='l', col='red', xlab='Sampling date', 
+     ylab='Probability density', main=0.01)
+abline(h=h, lty=2)
+plot(x, y2, type='l', col='blue', xlab='Sampling date', 
+     ylab='Probability density', main=0.1)
+abline(h=h, lty=2)
+
+
+
 
 # use date of seroconversion to inform prior
 settings <- list(
@@ -304,6 +339,9 @@ init.p <- list(phy=phy, rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
 set.seed(2)
 #results <- mh(1e3, params=init.p, settings=settings)
 results <- mh(1e5, params=init.p, settings=settings, log.skip=100, treelog.skip=100)
+
+
+
 
 
 
