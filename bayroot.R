@@ -245,8 +245,8 @@ inc.gamma <- function(a, x) {
 #' generic S3 predict for class bayroot
 #' 
 #' Extract sample of parameters (tree, origin, rate) from chain sample.
-#' Given origin and rate, calculate the expected sampling time 
-#' for divergence of censored tips (DNA) for each tree.
+#' Given origin and rate, sample integration dates from the posterior probability
+#' determined by sequence divergence of censored tips (DNA) for each tree.
 #' 
 predict.bayroot <- function(obj) {
   step <- 10  # work in progress, eventually do a sample of states
@@ -286,6 +286,7 @@ phy <- reroot(phy, which.min(tip.dates))
 ##############  test PDF  ##############
 pdf <- function(t, y, rate, t0, tmax) {
   # probability of integration time (t) given divergence (y)
+  # note uniform prior on t cancels out
   L <- as.double(rate*(t-t0))
   rate * L^y * exp(-L) / inc.gamma(y+1, as.double(rate*(tmax-t0)))
 }
@@ -295,24 +296,32 @@ tip.dates <- get.dates(phy, censor=TRUE)
 max.date <- max(tip.dates, na.rm=T)
 x <- seq(origin, max.date, length.out=100)
 
-y1 <- pdf(x, 0.001, 1e-5, min.date, max.date)
-y2 <- pdf(x, 0.01, 1e-5, min.date, max.date)
-y3 <- pdf(x, 0.1, 1e-5, min.date, max.date)
+y1 <- pdf(x, 0.0, 1e-4, min.date, max.date)
+y2 <- pdf(x, 0.01, 1e-4, min.date, max.date)
+y3 <- pdf(x, 1, 1e-4, min.date, max.date)
 
 h <- 1/as.integer(max.date - min.date)
+
 par(mfrow=c(1,3), cex.lab=1.2)
 plot(x, y1, type='l', xlab='Sampling date', ylab='Probability density',
-     main=0.001)
+     main=0.001, ylim=c(0, 6.5e-4))
 abline(h=h, lty=2)
-plot(x, y, type='l', col='red', xlab='Sampling date', 
-     ylab='Probability density', main=0.01)
+plot(x, y2, type='l', col='red', xlab='Sampling date', 
+     ylab='Probability density', main=0.01, ylim=c(0, 6.5e-4))
 abline(h=h, lty=2)
-plot(x, y2, type='l', col='blue', xlab='Sampling date', 
-     ylab='Probability density', main=0.1)
+plot(x, y3, type='l', col='blue', xlab='Sampling date', 
+     ylab='Probability density', main=0.1, ylim=c(0, 6.5e-4))
 abline(h=h, lty=2)
 
 
 
+cdf <- function(t, y, rate, t0, tmax) {
+  # cumulative distribution function, integrate from 0 to t
+  L <- as.double(rate*(t-t0))
+  inc.gamma(y+1, L) / inc.gamma(y+1, as.double(rate*(tmax-t0)))
+}
+
+y <- cdf(x, 0.01, 1e-5, min.date, max.date)
 
 # use date of seroconversion to inform prior
 settings <- list(
