@@ -15,6 +15,7 @@ require(ggfree)
 #' phy <- rtree(5)
 #' par(mfrow=c(1,2))
 #' plot(phy); plot(proposal(phy, delta=0.5))
+#' @export
 shift.root <- function(phy, delta=NA) {
   if (!is.rooted(phy)) {
     stop("Input tree must be rooted.")
@@ -65,12 +66,25 @@ shift.root <- function(phy, delta=NA) {
 }
 
 
-get.dates <- function(phy, censor=TRUE) {
-  tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
-  if (censor) {
-    tip.dates[grepl("_DNA_", phy$tip.label)] <- NA
-  }
-  return (tip.dates)
+#' Utility function to parse dates from sequence labels
+#' @param phy {ape:phylo}:  input tree with labelled tips
+#' @param delimiter {chr}:  character separating tokens in label
+#' @param pos {int}:  1-index of token representing date; 
+#'                    -1 indicates last token (default)
+#' @param format {chr}:  AIX-style date format string; defaults to ISO format "%Y-%m-%d"
+#' 
+#' @export
+get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
+  dt <- sapply(phy$tip.label, function(x) {
+    tokens <- strsplit(x, delimiter)[[1]]
+    if (pos == -1) {
+      return(tokens[length(tokens)])
+    }
+    else {
+      return(tokens[pos])
+    }
+  })
+  as.Date(dt, format=format)
 }
 
 
@@ -89,6 +103,8 @@ get.dates <- function(phy, censor=TRUE) {
 #' @param origin {double}:  date at root
 #' @param rate {double}:  mutation rate, i.e., slope of linear regression
 #' @return {double}:  log-likelihood
+#' 
+#' @export
 lf <- function(phy, origin, rate) {
   # extract tip distances from root
   div <- node.depth.edgelength(phy)[1:Ntip(phy)]  # indexed as in phy$tip.label
@@ -131,6 +147,8 @@ prior <- function(origin, rate, hyper) {
 #' @param treelog.skip {integer}:  number of steps between treelog entries
 #' 
 #' @return {data.frame, character}:  log, treelog
+#' 
+#' @export
 mh <- function(nstep, params, settings, log.skip=10, treelog.skip=10) {
   # deep copy
   next.params <- list(origin=params$origin, rate=params$rate, phy=params$phy)
@@ -196,6 +214,11 @@ mh <- function(nstep, params, settings, log.skip=10, treelog.skip=10) {
 
 
 #' generic S3 plot for bayroot class
+#' @param obj {S3}:  object of class ape::phylo
+#' @param step {int}: if specified, display MCMC state at given step; otherwise
+#'                    plot traces of posterior and model parameters.
+#' @param burnin {int}: number of steps in chain sample to discard as burnin.
+#' @export
 plot.bayroot <- function(obj, step=NA, burnin=1) {
   if (is.na(step)) {
     orig.par <- par(mfrow=c(3,2))
@@ -237,7 +260,9 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 
 #' short hand for lower incomplete gamma function, i.e.,
 #' \int_0^x t^(a-1) exp(-t) dt
-inc.gamma <- function(a, x) {
+#' @param a {double}: gamma exponent parameter
+#' @param x {double}: upper limit of integration
+.inc.gamma <- function(a, x) {
   pgamma(x, a) * gamma(a)
 }
 
@@ -248,6 +273,7 @@ inc.gamma <- function(a, x) {
 #' Given origin and rate, sample integration dates from the posterior probability
 #' determined by sequence divergence of censored tips (DNA) for each tree.
 #' 
+#' @export
 predict.bayroot <- function(obj) {
   step <- 10  # work in progress, eventually do a sample of states
 
@@ -265,92 +291,10 @@ predict.bayroot <- function(obj) {
   rate <- obj$log$rate[step]
   
   # calculate expected time 
-  exp.t <- min.date + 1/rate * inc.gamma(div+2, rate*dt) / inc.gamma(div+1, rate*dt)
+  exp.t <- min.date + 1/rate * .inc.gamma(div+2, rate*dt) / .inc.gamma(div+1, rate*dt)
   
   list(y=origin + div/rate, x=get.dates(phy, censor=FALSE))
 }
-
-
-# work through test case ZM1044M - https://doi.org/10.1371/journal.ppat.1008378
-
-setwd('~/git/bayroot')
-# screened for hypermutation, aligned (MAFFT) and reconstructed tree (IQTREE)
-phy <- read.tree('data/ZM1044M.fa.hyp.treefile')
-#phy <- midpoint.root(phy)
-
-# parse tip dates
-tip.dates <- get.dates(phy)
-phy <- reroot(phy, which.min(tip.dates))
-
-
-##############  test PDF  ##############
-pdf <- function(t, y, rate, t0, tmax) {
-  # probability of integration time (t) given divergence (y)
-  # note uniform prior on t cancels out
-  L <- as.double(rate*(t-t0))
-  rate * L^y * exp(-L) / inc.gamma(y+1, as.double(rate*(tmax-t0)))
-}
-
-origin <- as.Date("2006-01-26")  # sero midpoint
-tip.dates <- get.dates(phy, censor=TRUE)
-max.date <- max(tip.dates, na.rm=T)
-x <- seq(origin, max.date, length.out=100)
-
-y1 <- pdf(x, 0.0, 1e-4, min.date, max.date)
-y2 <- pdf(x, 0.01, 1e-4, min.date, max.date)
-y3 <- pdf(x, 1, 1e-4, min.date, max.date)
-
-h <- 1/as.integer(max.date - min.date)
-
-par(mfrow=c(1,3), cex.lab=1.2)
-plot(x, y1, type='l', xlab='Sampling date', ylab='Probability density',
-     main=0.001, ylim=c(0, 6.5e-4))
-abline(h=h, lty=2)
-plot(x, y2, type='l', col='red', xlab='Sampling date', 
-     ylab='Probability density', main=0.01, ylim=c(0, 6.5e-4))
-abline(h=h, lty=2)
-plot(x, y3, type='l', col='blue', xlab='Sampling date', 
-     ylab='Probability density', main=0.1, ylim=c(0, 6.5e-4))
-abline(h=h, lty=2)
-
-
-
-cdf <- function(t, y, rate, t0, tmax) {
-  # cumulative distribution function, integrate from 0 to t
-  L <- as.double(rate*(t-t0))
-  inc.gamma(y+1, L) / inc.gamma(y+1, as.double(rate*(tmax-t0)))
-}
-
-y <- cdf(x, 0.01, 1e-5, min.date, max.date)
-
-# use date of seroconversion to inform prior
-settings <- list(
-  # hyperparameters
-  mindate=as.Date("2005-11-29"),  # last HIV -ve
-  maxdate=as.Date("2006-03-25"),  # first HIV +ve
-  meanlog=-10.14,  # = log(0.0144 sub/nt/yr / 365), Alizon and Fraser
-  sdlog=1,  # Alizon and Fraser, 95% CI: 0.00166 - 0.0525
-  
-  # proposal function parameters
-  root.delta=0.001,
-  date.sd=10,  # days
-  rate.delta=1e-6
-)
-# > x <- rlnorm(1e6, -10.14, 1)
-# > quantile(365*x, c(0.025, 0.5, 0.975))
-# 2.5%         50%       97.5% 
-# 0.002027529 0.014459692 0.103403591 
-
-
-init.p <- list(phy=phy, rate=1e-5, origin=min(tip.dates, na.rm=T)-1)
-
-
-set.seed(2)
-#results <- mh(1e3, params=init.p, settings=settings)
-results <- mh(1e5, params=init.p, settings=settings, log.skip=100, treelog.skip=100)
-
-
-
 
 
 
