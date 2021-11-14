@@ -106,8 +106,8 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 #' 
 #' @export
 lf <- function(phy, origin, rate) {
-  # extract tip distances from root
-  div <- node.depth.edgelength(phy)[1:Ntip(phy)]  # indexed as in phy$tip.label
+  # extract tip distances from root, indexed as in phy$tip.label
+  div <- node.depth.edgelength(phy)[1:Ntip(phy)]
   
   # time differences from origin, in days
   tip.dates <- get.dates(phy)
@@ -143,13 +143,13 @@ prior <- function(origin, rate, hyper) {
 #' @param tip.dates {Date}:  vector of Date objects corresponding to tip.labels
 #' @param init.p {list}:  initial parameter settings
 #' @param settings {list}:  hyperparameters for prior distributions and proposal settings
-#' @param log.skip {integer}:  number of steps between log entries
-#' @param treelog.skip {integer}:  number of steps between treelog entries
+#' @param skip {integer}:  number of steps between log entries
+#' @param echo {logical}:  if TRUE, print log messages to console
 #' 
 #' @return {data.frame, character}:  log, treelog
 #' 
 #' @export
-mh <- function(nstep, params, settings, log.skip=10, treelog.skip=10) {
+mh <- function(nstep, params, settings, skip=10, echo=FALSE) {
   # deep copy
   next.params <- list(origin=params$origin, rate=params$rate, phy=params$phy)
   
@@ -199,11 +199,12 @@ mh <- function(nstep, params, settings, log.skip=10, treelog.skip=10) {
     }
     
     # update logs
-    if (i %% log.skip == 0) {
+    if (i %% skip == 0) {
       log <- rbind(log, list(i, lpost, llk, lprior, params$origin, params$rate))
-    }
-    if (i %% treelog.skip == 0) {
       treelog <- c(treelog, write.tree(params$phy))
+      if (echo) {
+        message(i, lpost, llk, lprior, params$origin, params$rate)
+      }
     }
   }
   result <- list(log=log, treelog=treelog)
@@ -242,7 +243,7 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
   else{
     phy <- read.tree(text=obj$treelog[step])
     div <- node.depth.edgelength(phy)[1:Ntip(phy)]
-    tip.dates <- get.dates(phy, censor=FALSE)
+    tip.dates <- get.dates(phy)
     origin <- obj$log$origin[step]
     rate <- obj$log$rate[step]
     
@@ -262,8 +263,25 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 #' \int_0^x t^(a-1) exp(-t) dt
 #' @param a {double}: gamma exponent parameter
 #' @param x {double}: upper limit of integration
-.inc.gamma <- function(a, x) {
-  pgamma(x, a) * gamma(a)
+.inc.gamma <- function(a, x, log=FALSE) {
+  if (log) {
+    pgamma(x, a, log=TRUE) + lgamma(a)
+  } else {
+    pgamma(x, a) * gamma(a)  
+  }
+}
+
+
+#' probability distribution function for integration time (t)
+#' given divergence (y)
+.pdfunc <- function(t, y, rate, t0, tmax) {
+  L <- as.double(rate*(t-t0))
+  exp(log(rate) + y*log(L) - L - .inc.gamma(y+1, as.double(rate*(tmax-t0)), log=T))
+}
+
+#' generate random deviates by rejection sampling
+.sample.pdfunc <- function(y, rate, t0, tmax) {
+  # need to solve for maximum pdf
 }
 
 
@@ -274,17 +292,17 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 #' determined by sequence divergence of censored tips (DNA) for each tree.
 #' 
 #' @export
-predict.bayroot <- function(obj) {
+predict.bayroot <- function(obj, censored) {
   step <- 10  # work in progress, eventually do a sample of states
 
   # process tree at this step
   phy <- read.tree(text=obj$treelog[step])
   div <- node.depth.edgelength(phy)[1:Ntip(phy)]
 
-  tip.dates <- get.dates(phy, censor=TRUE)
-  min.date <- min(tip.dates, na.rm=T)
+  tip.dates <- get.dates(phy)
+  min.date <- min(tip.dates[!censored], na.rm=T)
   # FIXME: actually this should be limited by sample date of censored tip
-  max.date <- max(tip.dates, na.rm=T)
+  max.date <- max(tip.dates[!censored], na.rm=T)
 
   origin <- obj$log$origin[step]
   dt <- max.date - min.date
@@ -293,7 +311,7 @@ predict.bayroot <- function(obj) {
   # calculate expected time 
   exp.t <- min.date + 1/rate * .inc.gamma(div+2, rate*dt) / .inc.gamma(div+1, rate*dt)
   
-  list(y=origin + div/rate, x=get.dates(phy, censor=FALSE))
+  list(y=origin + div/rate, x=tip.dates)
 }
 
 
