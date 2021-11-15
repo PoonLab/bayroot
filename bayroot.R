@@ -275,13 +275,37 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 #' probability distribution function for integration time (t)
 #' given divergence (y)
 .pdfunc <- function(t, y, rate, t0, tmax) {
-  L <- as.double(rate*(t-t0))
-  exp(log(rate) + y*log(L) - L - .inc.gamma(y+1, as.double(rate*(tmax-t0)), log=T))
+  L <- rate*(as.integer(t)-as.integer(t0))
+  exp(log(rate) + y*log(L) - L - 
+        .inc.gamma(y+1, rate*(as.integer(tmax)-as.integer(t0)), log=T))
 }
 
 #' generate random deviates by rejection sampling
-.sample.pdfunc <- function(y, rate, t0, tmax) {
-  # need to solve for maximum pdf
+.sample.pdfunc <- function(y, rate, t0, tmax, max.tries=1e3) {
+  # calculate maximum value for PDF
+  # TODO: is there a closed form solution?
+  f <- function(t) { -.pdfunc(t, y, rate, t0, tmax) }
+  mid.point <- t0 + (tmax-t0)/2
+  res <- optim(mid.point, f, method='Brent', lower=t0, upper=tmax)
+  fmax <- -res$value
+  
+  # rejection sampling
+  f <- function(t) { .pdfunc(t, y, rate, t0, tmax) }
+  tries <- 0
+  while(TRUE) {
+    tries <- tries + 1
+    # sample random date
+    s <- as.Date(runif(1, min=t0, max=tmax), origin='1970-01-01')
+    fs <- f(s)  # evaluate pdf at t=s
+    if (runif(1, 0, fmax) < fs) {
+      break  # accept
+    }
+    if (tries > max.tries) {
+      warning("Exceeded maximum attempts", tries, "in .sample.pdfunc()")
+      return(NA)
+    }
+  }
+  return(s)
 }
 
 
@@ -291,27 +315,38 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 #' Given origin and rate, sample integration dates from the posterior probability
 #' determined by sequence divergence of censored tips (DNA) for each tree.
 #' 
+#' @param obj {ape:phylo}:  S3 object of class ape:phylo
+#' @param censored {logical}:  
 #' @export
-predict.bayroot <- function(obj, censored) {
-  step <- 10  # work in progress, eventually do a sample of states
-
-  # process tree at this step
-  phy <- read.tree(text=obj$treelog[step])
-  div <- node.depth.edgelength(phy)[1:Ntip(phy)]
-
-  tip.dates <- get.dates(phy)
-  min.date <- min(tip.dates[!censored], na.rm=T)
-  # FIXME: actually this should be limited by sample date of censored tip
-  max.date <- max(tip.dates[!censored], na.rm=T)
-
-  origin <- obj$log$origin[step]
-  dt <- max.date - min.date
-  rate <- obj$log$rate[step]
-  
-  # calculate expected time 
-  exp.t <- min.date + 1/rate * .inc.gamma(div+2, rate*dt) / .inc.gamma(div+1, rate*dt)
-  
-  list(y=origin + div/rate, x=tip.dates)
+predict.bayroot <- function(obj, censored, burnin=10, thin=100) {
+  rows <- as.integer(seq(burnin, nrow(obj$log), length.out=thin))
+  res <- matrix(NA, nrow=length(rows), ncol=sum(censored))
+  row.names(res) <- rows
+  labels <- NULL
+  for (i in 1:length(rows)) {
+    step <- rows[i]
+    # process tree at this step
+    phy <- read.tree(text=obj$treelog[step])
+    if (length(labels)==0) {
+      labels <- phy$tip.label[]
+    }
+    div <- node.depth.edgelength(phy)[1:Ntip(phy)]
+    
+    tip.dates <- get.dates(phy)
+    min.date <- min(tip.dates[!censored], na.rm=T)
+    # FIXME: actually this should be limited by sample date of censored tip
+    max.date <- max(tip.dates[!censored], na.rm=T)
+    
+    origin <- obj$log$origin[step]
+    dt <- max.date - min.date
+    rate <- obj$log$rate[step]
+    
+    # sample integration times for censored tips
+    samp <- sapply(div[censored], function(y) {
+      .sample.pdfunc(y, rate, min.date, max.date) })
+    names(samp) <- phy$tip.label[censored]
+  }
+  return(res)
 }
 
 
