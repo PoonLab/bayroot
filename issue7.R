@@ -90,3 +90,23 @@ plot(results, burnin=20)
 plot(results, step=500)
 
 
+dates <- predict(results, censored=phy$tip.label[grepl("DNA", phy$tip.label)], thin=200)
+div <- node.depth.edgelength(phy)[1:Ntip(phy)]
+x <- div[grepl("DNA", phy$tip.label)]
+y <- as.Date(apply(dates, 2, mean), origin='1970-01-01')
+q <- apply(dates, 2, function(x) quantile(x, c(0.025, 0.25, 0.75, 0.975)))
+
+plot(x, y, type='n', xlab='Divergence', ylab='Integration dates', 
+     ylim=c(as.Date('2009-01-01'), as.Date('2011-02-01')))
+segments(x0=x, y0=q[2,], y1=q[3,], lwd=5, col='grey')  # interquartile range
+segments(x0=x, y0=q[1,], y1=q[4,])  # empirical 95% interval
+points(x, y, pch=21, bg='white')
+
+# root-to-tip regression by posterior medians
+tmax <- max(tip.dates, na.rm=T)
+est.origin <- median(results$log$origin)
+est.rate <- median(results$log$rate)
+segments(y0=median(results$log$origin), y1=tmax,
+         x0=0, x1= est.rate * (tmax-est.origin), col='red')
+
+

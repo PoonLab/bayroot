@@ -316,35 +316,46 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 #' determined by sequence divergence of censored tips (DNA) for each tree.
 #' 
 #' @param obj {ape:phylo}:  S3 object of class ape:phylo
-#' @param censored {logical}:  
+#' @param censored {character}:  tip labels to predict dates for
+#' @param burning {integer}:  number of steps to discard from start of chain sample
+#' @param thin {integer}:  number of steps to sample at regular intervals from 
+#'                         post-burning chain
+#' @return {data.frame}:  sampled dates as {double} values; each row corresponds
+#'                        to a step, and each column to a censored tip.
 #' @export
 predict.bayroot <- function(obj, censored, burnin=10, thin=100) {
   rows <- as.integer(seq(burnin, nrow(obj$log), length.out=thin))
-  res <- matrix(NA, nrow=length(rows), ncol=sum(censored))
+  
+  # prepare output container
+  res <- matrix(NA, nrow=length(rows), ncol=length(censored))
+  res <- as.data.frame(res)
+  names(res) <- censored
   row.names(res) <- rows
-  labels <- NULL
+  
   for (i in 1:length(rows)) {
     step <- rows[i]
-    # process tree at this step
-    phy <- read.tree(text=obj$treelog[step])
-    if (length(labels)==0) {
-      labels <- phy$tip.label[]
-    }
-    div <- node.depth.edgelength(phy)[1:Ntip(phy)]
     
-    tip.dates <- get.dates(phy)
-    min.date <- min(tip.dates[!censored], na.rm=T)
-    # FIXME: actually this should be limited by sample date of censored tip
-    max.date <- max(tip.dates[!censored], na.rm=T)
-    
+    # unpack state
     origin <- obj$log$origin[step]
-    dt <- max.date - min.date
     rate <- obj$log$rate[step]
+    phy <- read.tree(text=obj$treelog[step])
     
-    # sample integration times for censored tips
-    samp <- sapply(div[censored], function(y) {
-      .sample.pdfunc(y, rate, min.date, max.date) })
-    names(samp) <- phy$tip.label[censored]
+    # retrieve tip dates
+    labels <- phy$tip.label
+    tip.dates <- get.dates(phy)
+    tip.dates <- tip.dates[!is.element(labels, censored)]
+    # FIXME: actually this should be limited by sample date of censored tip
+    max.date <- max(tip.dates, na.rm=T)
+    
+    # sample integration times for censored tips given divergence
+    div <- node.depth.edgelength(phy)[1:Ntip(phy)]
+    samp <- sapply(div[is.element(labels, censored)], function(y) {
+      .sample.pdfunc(y, rate, origin, max.date)
+      })
+    names(samp) <- labels[is.element(labels, censored)]
+    
+    # append sampled dates to container
+    res[i, ] <- samp[match(names(samp), names(res))]
   }
   return(res)
 }
