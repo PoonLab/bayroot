@@ -88,7 +88,7 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 }
 
 
-#' lf - likelihood function
+#' .lf - likelihood function
 #' Calculate likelihood of divergences given input tree and sampling 
 #' times.  Assume a linear relationship between divergence and time with 
 #' slope {rate} and x-intercept {origin}.
@@ -103,9 +103,7 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 #' @param origin {double}:  date at root
 #' @param rate {double}:  mutation rate, i.e., slope of linear regression
 #' @return {double}:  log-likelihood
-#' 
-#' @export
-lf <- function(phy, origin, rate) {
+.lf <- function(phy, origin, rate) {
   # extract tip distances from root, indexed as in phy$tip.label
   div <- node.depth.edgelength(phy)[1:Ntip(phy)]
   
@@ -125,7 +123,7 @@ lf <- function(phy, origin, rate) {
 #' @param hyper {list}:  hyperparameters for prior distributions
 #'    origin:  dnorm(mean, sd)
 #'    rate:  dlnorm(meanlog, sdlog)
-prior <- function(origin, rate, hyper) {
+.prior <- function(origin, rate, hyper) {
   #dnorm(as.integer(origin), as.integer(hyper['mean']), hyper['sd']) *
   max(-1e50, dunif(as.integer(origin), min=as.integer(hyper$mindate),
         max=as.integer(hyper$maxdate), log=T)) + 
@@ -135,8 +133,10 @@ prior <- function(origin, rate, hyper) {
 
 #' mh - Metropolis-Hastings sampler
 #' 
-#' TODO: let user specify proposal distribution parameters
-#' TODO: pass file paths to write logs
+#' origin = date of most recent common ancestor (root of tree), i.e.,
+#'          x-intercept in root-to-tip regression
+#' rate = molecular clock, expected number of substitutions 
+#' TODO: pass file paths to write logs?
 #' 
 #' @param nstep {integer}:  number of steps in chain sample
 #' @param phy {ape:phylo}:  starting tree, rooted
@@ -144,21 +144,24 @@ prior <- function(origin, rate, hyper) {
 #' @param init.p {list}:  initial parameter settings
 #' @param settings {list}:  hyperparameters for prior distributions and proposal settings
 #' @param skip {integer}:  number of steps between log entries
-#' @param echo {logical}:  if TRUE, print log messages to console
+#' @param echo {logical}:  if TRUE, print log messages to console (stderr)
 #' 
-#' @return {data.frame, character}:  log, treelog
-#' 
+#' @return {list}:  {data frame} log, chain sample posterior, likelihood, prior,
+#'                  and model parameters (origin, rate)
+#'                  {character} treelog, Newick serializations of rooted trees
+#'                  in chain sample.
 #' @export
 mh <- function(nstep, params, settings, skip=10, echo=FALSE) {
   # deep copy
   next.params <- list(origin=params$origin, rate=params$rate, phy=params$phy)
   
   # posterior probability of initial state
-  llk <- lf(params$phy, origin=params$origin, rate=params$rate)
-  lprior <- prior(origin=params$origin, rate=params$rate, hyper=settings)
+  llk <- .lf(params$phy, origin=params$origin, rate=params$rate)
+  lprior <- .prior(origin=params$origin, rate=params$rate, hyper=settings)
   lpost <- llk + lprior
   
   tip.dates <- get.dates(params$phy)
+  # origin cannot be more recent than first sample date
   min.date <- min(tip.dates, na.rm=T)
   
   # prepare logs
@@ -182,8 +185,8 @@ mh <- function(nstep, params, settings, skip=10, echo=FALSE) {
       next.params$rate <- params$rate + rate.delta
     }
     
-    next.llk <- lf(next.params$phy, origin=next.params$origin, rate=next.params$rate)
-    next.lprior <- prior(origin=next.params$origin, rate=next.params$rate, hyper=settings)
+    next.llk <- .lf(next.params$phy, origin=next.params$origin, rate=next.params$rate)
+    next.lprior <- .prior(origin=next.params$origin, rate=next.params$rate, hyper=settings)
     next.lpost <- next.llk + next.lprior
     if (is.infinite(next.lpost)) {
       stop(next.params)
@@ -317,14 +320,27 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 #' 
 #' @param obj {ape:phylo}:  S3 object of class ape:phylo
 #' @param censored {character}:  tip labels to predict dates for
+#' @param max.date {Date}:  set upper bound on date estimates for censored tips.
+#'                          Defaults to most recent date for uncensored tips.
 #' @param burning {integer}:  number of steps to discard from start of chain sample
 #' @param thin {integer}:  number of steps to sample at regular intervals from 
 #'                         post-burning chain
+#' @param delimiter {character}:  character separating tokens in label
+#' @param pos {integer}:  1-index of token representing date; -1 indicates last token (default)
+#' @param format {character}:  AIX-style date format string; defaults to ISO format "%Y-%m-%d"
 #' @return {data.frame}:  sampled dates as {double} values; each row corresponds
 #'                        to a step, and each column to a censored tip.
 #' @export
-predict.bayroot <- function(obj, censored, burnin=10, thin=100) {
+predict.bayroot <- function(obj, censored, max.date=NA, burnin=10, thin=100,
+                            delimiter="_", pos=-1, format="%Y-%m-%d") {
   rows <- as.integer(seq(burnin, nrow(obj$log), length.out=thin))
+  
+  phy <- read.tree(text=obj$treelog[1])
+  tip.dates <- get.dates(phy, delimiter=delimiter, pos=pos, format=format)
+  if (is.na(max.date)) {
+    # limit to uncensored tips
+    max.date <- max(tip.dates[!is.element(phy$tip.label, censored)], na.rm=T)
+  }
   
   # prepare output container
   res <- matrix(NA, nrow=length(rows), ncol=length(censored))
@@ -340,17 +356,16 @@ predict.bayroot <- function(obj, censored, burnin=10, thin=100) {
     rate <- obj$log$rate[step]
     phy <- read.tree(text=obj$treelog[step])
     
-    # retrieve tip dates
+    # tip label order changes with re-rooting and calling read.tree()
     labels <- phy$tip.label
-    tip.dates <- get.dates(phy)
-    tip.dates <- tip.dates[!is.element(labels, censored)]
-    # FIXME: actually this should be limited by sample date of censored tip
-    max.date <- max(tip.dates, na.rm=T)
+    dates <- get.dates(phy, delimiter=delimiter, pos=pos, format=format)
     
     # sample integration times for censored tips given divergence
     div <- node.depth.edgelength(phy)[1:Ntip(phy)]
-    samp <- sapply(div[is.element(labels, censored)], function(y) {
-      .sample.pdfunc(y, rate, origin, max.date)
+    samp <- sapply(which(is.element(labels, censored)), function(i) {
+      # in case censored tip sampled before last uncensored tip (max.date)
+      this.max.date <- min(max.date, dates[i])
+      .sample.pdfunc(div[i], rate, origin, this.max.date)
       })
     names(samp) <- labels[is.element(labels, censored)]
     
