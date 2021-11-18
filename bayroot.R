@@ -108,8 +108,7 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
   div <- node.depth.edgelength(phy)[1:Ntip(phy)]
   
   # time differences from origin, in days
-  tip.dates <- get.dates(phy)
-  delta.t <- as.integer(tip.dates - origin)
+  delta.t <- as.integer(phy$tip.dates - origin)
   
   # compute Poisson model
   sum(div*log(rate*delta.t) - (rate*delta.t) - lgamma(div+1), na.rm=T)
@@ -131,6 +130,41 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 }
 
 
+#' Wrapper around ape:read.tree()
+#' @param file {character}:  file name specified by string
+#' @param text {character}:  alternate parse tree string
+#' @param seqlen {integer}:  length of sequence alignment (nucleotides or amino acids).
+#'                            If this is not set, function will raise a warning.
+#' @param delimiter {character}:  character separating tokens in label
+#' @param pos {integer}:  1-index of token representing date; -1 indicates last token (default)
+#' @param format {character}:  AIX-style date format string; defaults to ISO format "%Y-%m-%d"
+#' @return S3 object of class ape::phylo
+# @export
+load.tree <- function(file="", text=NULL, seqlen=NULL, 
+                      delimiter="_", pos=-1, format="%Y-%m-%d") {
+  phy <- read.tree(file=file, text=text)
+  if (is.null(seqlen)) {
+    warning("You did not specify seq.len - make sure the branch lengths of your ",
+            "input tree are already scaled to expected number of substitutions ",
+            "per sequence, not per site!")
+  }
+  else {
+    phy$edge.length <- phy$edge.length * seqlen  
+  }
+  
+  phy$tip.dates <- get.dates(phy, delimiter=delimiter, pos=pos, format=format)
+  
+  if (!is.rooted(phy)) {
+    # root arbitrarily on the terminal branch leading to earliest sample
+    #phy <- reroot(phy, which.min(phy$tip.dates))
+    phy <- midpoint.root(phy)
+  }
+  
+  phy
+}
+
+
+
 #' mh - Metropolis-Hastings sampler
 #' 
 #' origin = date of most recent common ancestor (root of tree), i.e.,
@@ -140,7 +174,6 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 #' 
 #' @param nstep {integer}:  number of steps in chain sample
 #' @param phy {ape:phylo}:  starting tree, rooted
-#' @param tip.dates {Date}:  vector of Date objects corresponding to tip.labels
 #' @param init.p {list}:  initial parameter settings
 #' @param settings {list}:  hyperparameters for prior distributions and proposal settings
 #' @param skip {integer}:  number of steps between log entries
@@ -150,6 +183,14 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 #'                  and model parameters (origin, rate)
 #'                  {character} treelog, Newick serializations of rooted trees
 #'                  in chain sample.
+#' @example 
+#' phy <- load.tree('data/ZM1044M.fa.hyp.treefile', seqlen=9200)
+#' settings <- list(mindate=as.Date("2005-11-29"), maxdate=as.Date("2006-03-25"),
+#'                  meanlog=-1.013, sdlog=1, 
+#'                  root.delta=5, date.sd=14, rate.delta=0.005)
+#' init.p <- list(phy=phy, rate=0.1, origin=as.Date("2006-01-01"))
+#' result <- mh(1e4, init.p, settings, skip=100, echo=TRUE)
+#' 
 #' @export
 mh <- function(nstep, params, settings, skip=10, echo=FALSE) {
   # deep copy
@@ -160,9 +201,8 @@ mh <- function(nstep, params, settings, skip=10, echo=FALSE) {
   lprior <- .prior(origin=params$origin, rate=params$rate, hyper=settings)
   lpost <- llk + lprior
   
-  tip.dates <- get.dates(params$phy)
   # origin cannot be more recent than first sample date
-  min.date <- min(tip.dates, na.rm=T)
+  min.date <- min(phy$tip.dates, na.rm=T)
   
   # prepare logs
   log <- data.frame(step=0, posterior=lpost, logL=llk, prior=lprior, 
@@ -206,7 +246,7 @@ mh <- function(nstep, params, settings, skip=10, echo=FALSE) {
       log <- rbind(log, list(i, lpost, llk, lprior, params$origin, params$rate))
       treelog <- c(treelog, write.tree(params$phy))
       if (echo) {
-        message(i, lpost, llk, lprior, params$origin, params$rate)
+        message(paste(i, lpost, llk, lprior, params$origin, params$rate))
       }
     }
   }
@@ -222,8 +262,13 @@ mh <- function(nstep, params, settings, skip=10, echo=FALSE) {
 #' @param step {int}: if specified, display MCMC state at given step; otherwise
 #'                    plot traces of posterior and model parameters.
 #' @param burnin {int}: number of steps in chain sample to discard as burnin.
+#' @param delimiter {character}:  character separating tokens in label
+#' @param pos {integer}:  1-index of token representing date; -1 indicates last token (default)
+#' @param format {character}:  AIX-style date format string; defaults to ISO format "%Y-%m-%d"
+
 #' @export
-plot.bayroot <- function(obj, step=NA, burnin=1) {
+plot.bayroot <- function(obj, step=NA, burnin=1, delimiter="_", pos=-1, 
+                         format="%Y-%m-%d") {
   if (is.na(step)) {
     orig.par <- par(mfrow=c(3,2))
     end <- nrow(obj$log)
