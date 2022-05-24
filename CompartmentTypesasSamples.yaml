@@ -1,0 +1,53 @@
+InitialConditions:
+  originTime: 20.0
+  size:
+    Population1: 100
+    Population2: 100
+  indexType: 'Population1'
+
+CompartmentTypes:
+  'Population1':
+    branching.rates: 
+      20: (Population1=0.01, Population2=0.0)
+      14: (Population1=0.0, Population2=0.01)
+    migration.rates: ()
+    transition.rates: ()
+    effective.size: 100.0
+    generation.time: 1
+    bottleneck.size: 1                 
+    wait.time.distr:                   
+      distr: 'exp'
+      hyperparameters:
+        rate: 20
+
+  'Population2':
+    branching.rates: (Population1=0.0, Population2=0.01)
+    migration.rates: ()
+    transition.rates: ()
+    effective.size: 100.0
+    generation.time: 1
+    bottleneck.size: 1                 
+    wait.time.distr:                   
+      distr: 'exp'
+      hyperparameters:
+        rate: 20
+
+Compartments:
+  'Population1I':
+    type: Population1
+    replicates: 2
+
+  'Population2I':
+    type: Population2
+    replicates: 2
+
+Lineages:
+  'virus1':
+    sampling.time: 13           
+    location: Population1I
+    replicates: 1
+
+  'virus2':
+    sampling.time: 0            
+    location: Population2I
+    replicates: 1

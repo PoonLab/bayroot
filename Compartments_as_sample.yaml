@@ -1,0 +1,44 @@
+InitialConditions:
+  originTime: 10.0
+  size:
+    host: 100
+  indexType: 'host'
+
+CompartmentTypes:
+  'host':
+    branching.rates: (host=0.01)
+    migration.rates: ()
+    transition.rates: ()
+    effective.size: 100.0
+    generation.time: 1
+    bottleneck.size: 1                 
+    wait.time.distr:                   
+      distr: 'exp'
+      hyperparameters:
+        rate: 20
+
+Compartments:
+  'sample1':
+    type: host
+    replicates: 10
+    
+Lineages:
+  'virus1':
+    sampling.time: 6            
+    location: sample1
+    replicates: 1
+
+  'virus2':
+    sampling.time: 3            
+    location: sample1
+    replicates: 1
+
+  'virus3':
+    sampling.time: 1            
+    location: sample1
+    replicates: 1
+    
+  'virus4':
+    sampling.time: 0            
+    location: sample1
+    replicates: 1

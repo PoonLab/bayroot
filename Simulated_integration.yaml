@@ -1,0 +1,147 @@
+InitialConditions:
+  originTime: 20.0
+  size:
+    Active: 100
+    Latent: 100
+    Death: 0
+  indexType: 'Active'
+
+CompartmentTypes:
+  'Active':
+    branching.rates: 
+      20: (Active=0.01, Latent=0.0)
+      14: (Active=0.0, Latent=0.0)
+    migration.rates: ()
+    transition.rates: (Latent=0.01, Death=0.004)
+    effective.size: 1.0
+    generation.time: 1
+    bottleneck.size: 1                 
+    wait.time.distr:                   
+      distr: 'exp'
+      hyperparameters:
+        rate: 20
+
+  'Latent':
+    branching.rates: (Active=0.0, Latent=0.0001)
+    migration.rates: ()
+    transition.rates: (Active=0.00, Death=0.0)
+    effective.size: 1.0
+    generation.time: 1
+    bottleneck.size: 1                 
+    wait.time.distr:                   
+      distr: 'exp'
+      hyperparameters:
+        rate: 20
+
+  'Death':
+    branching.rates: ()
+    migration.rates: ()
+    transition.rates: ()
+    effective.size: 100.0
+    generation.time: 1
+    bottleneck.size: 1                 
+    wait.time.distr:                   
+      distr: 'exp'
+      hyperparameters:
+        rate: 20
+
+Compartments:
+  'Sample1':
+    type: Active
+    replicates: 1
+    
+  'Sample2':
+    type: Active
+    replicates: 1
+    
+  'Sample3':
+    type: Active
+    replicates: 1
+    
+  'Sample4':
+    type: Active
+    replicates: 1
+    
+  'Sample5':
+    type: Active
+    replicates: 1
+    
+  'Sample6':
+    type: Active
+    replicates: 1
+    
+  'Sample7':
+    type: Active
+    replicates: 1
+    
+  'Sample8':
+    type: Active
+    replicates: 1
+    
+  'LSample1':
+    type: Latent
+    replicates: 1
+
+  'LSample2':
+    type: Latent
+    replicates: 1
+
+  'LSample3':
+    type: Latent
+    replicates: 1
+
+Lineages:
+  'virus1':
+    sampling.time: 16            
+    location: Sample1
+    replicates: 1
+    
+  'virus2':
+    sampling.time: 16            
+    location: Sample2
+    replicates: 1
+    
+  'virus3':
+    sampling.time: 16            
+    location: Sample3
+    replicates: 1
+    
+  'virus4':
+    sampling.time: 16            
+    location: Sample4
+    replicates: 1
+    
+  'virus5':
+    sampling.time: 10            
+    location: Sample5
+    replicates: 1
+    
+  'virus6':
+    sampling.time: 10            
+    location: Sample6
+    replicates: 1
+    
+  'virus7':
+    sampling.time: 10            
+    location: Sample7
+    replicates: 1
+    
+  'virus8':
+    sampling.time: 10            
+    location: Sample8
+    replicates: 1
+    
+  'virus9':
+    sampling.time: 0            
+    location: LSample1
+    replicates: 1
+    
+  'virus10':
+    sampling.time: 0            
+    location: LSample2
+    replicates: 1
+    
+  'virus11':
+    sampling.time: 0            
+    location: LSample3
+    replicates: 1
