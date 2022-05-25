@@ -1,0 +1,64 @@
+InitialConditions:
+  originTime: 20
+  size:
+    Active: 1000
+    Latent: 100
+    Replenish: 1000
+    Death: 0
+  indexType: Active
+
+CompartmentTypes:
+  'Active':
+    branching.rates: 
+      20: (Active=0.01, Latent=0.0001, Replenish= 0.0, Death= 0.0)
+      10: (Active=0.0, Latent=0.0, Replenish=0.0, Death=0.0)
+    transition.rates: 
+      susceptible: (Active=0.0, Latent=0.001, Replenish=0.0, Death=0.005) 
+      infected: (Active=0.0, Latent=0.001, Replenish=0.0, Death=0.3) 
+    coalescent.rate: 1
+    migration.rates: ()
+    generation.time: 1
+    bottleneck.size: 1                 
+    effective.size: 1
+  'Latent':
+    branching.rates: (Active=0, Latent=0.001, Replenish=0.0, Death=0.0)
+    transition.rates: (Active=0.001, Latent=0.0, Replenish=0.0, Death=0.001) 
+    coalescent.rate: 1
+    migration.rates: ()
+    generation.time: 1
+    bottleneck.size: 1                 
+    effective.size: 1
+  'Replenish':
+    branching.rates: (Active=0, Latent=0, Replenish=0.0, Death=0.0)
+    transition.rates: (Active=0.1, Latent=0.01, Replenish=0.0, Death=0.0) 
+    coalescent.rate: 1
+    migration.rates: ()
+    generation.time: 1
+    bottleneck.size: 1                 
+    effective.size: 1
+  'Death':
+    branching.rates: (Active=0, Latent=0, Replenish=0.0, Death=0.0)
+    transition.rates: (Active=0, Latent=0, Replenish=0.0, Death=0.0)
+    coalescent.rate: 0
+    migration.rates: ()
+    generation.time: 1
+    bottleneck.size: 1                 
+    effective.size: 1
+
+Compartments:
+  'Activecomp':
+    type: Active                         
+    replicates: 5
+  'Latentcomp':
+    type: Latent                         
+    replicates: 5
+
+Lineages:
+  'A':
+    sampling.time: 10
+    location: Activecomp
+    replicates: 1
+  'B':
+    sampling.time: 0 
+    location: Latentcomp
+    replicates: 1
