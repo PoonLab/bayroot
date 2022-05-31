@@ -287,7 +287,7 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 .sample.pdfunc <- function(y, rate, t0, tmax, max.tries=1e3) {
   # calculate maximum value for PDF
   # TODO: is there a closed form solution?
-  f <- function(t) { -.pdfunc(t, y, rate, t0, tmax) }
+  f <- function(t) { -.pdfunc(t, y, rate, t0, tmax) }  # neg for minimization
   mid.point <- t0 + (tmax-t0)/2
   res <- optim(mid.point, f, method='Brent', lower=t0, upper=tmax)
   fmax <- -res$value
