@@ -5,6 +5,11 @@ Write control.txt file and execute indelible to simulate sequences.
 import sys
 import os
 from Bio import Phylo
+import tempfile
+import argparse
+
+parser = argparse.ArgumentParser("Simulate sequences on tree using INDELible")
+
 
 
 # read tree from file
@@ -20,6 +25,7 @@ scaling_factor = 1.  # average one substitution per site in tree
 kappa1 = 4.0
 kappa2 = 8.0
 
+tmpfile = tempfile.NamedTemporaryFile(delete=False)
 handle = open('control.txt', 'w')
 
 # write minimal contents of INDELible control file

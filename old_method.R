@@ -1,7 +1,9 @@
 require(ggplot2)
 require(chemCal)
+
 # set the file location
 tree.file <- '~/1_projects/bayroot/zambia/ZM1165M'
+
 # read tree
 tree <- read.tree(paste(tree.file, ".fa.hyp.treefile", sep = ""))
 # Numeric date origin
