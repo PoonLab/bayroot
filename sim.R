@@ -20,26 +20,11 @@ points(L$edges$x1, L$edges$y1, cex=1,
        pch=as.integer(pch[L$edges$event.type]))
 
 
-# zero-out branch lengths for latent compartments
-set.seed(1)
-for (i in 1:10) {
-  print(i)
-  outer <- sim.outer.tree(model)
-  phy <- as.phylo(outer)
-  
-  # TODO: label tips wrt. sample times
-  
-  int.times <- get.integration.times(phy)
-  
-  write.tree(phy, file=paste("data/latent1", 'orig', i, 'nwk', sep='.'))
-  phy$edge.length[phy$from.type=='Latent'] <- 0
-  write.tree(phy, file=paste("data/latent1", 'cens', i, 'nwk', sep='.'))
-}
-
 
 get.integration.times <- function(phy) {
   L <- tree.layout(phy)  # yields nice data structures
   df <- L$edges[nrow(L$edges):1, ]
+  max.depth <- max(df$x1)
   ltips <- which(df$isTip & df$to.type=='Latent')
   result <- rep(NA, length(ltips))
   for (j in 1:length(ltips)) {
@@ -51,14 +36,14 @@ get.integration.times <- function(phy) {
       if (row$event.type=='transmission') {
         if (is.latent) {
           if (row$from.type=='Active' & row$to.type=='Latent') {
-            result[j] <- row$x1
+            result[j] <- max.depth-row$x1
             break
           }
         }
         else {
           # has transitioned to active
           if (row$from.type=='Active' & row$to.type=='Active') {
-            result[j] <- row$x1
+            result[j] <- max.depth-row$x1
             break
           }
         }
@@ -77,4 +62,31 @@ get.integration.times <- function(phy) {
   result
 }
 
+
+# get sampling times (in forward time)
+fixed.sampl <- model$get.initial.conds()$originTime - model$get.fixed.samplings()
+names(fixed.sampl) <- gsub("__.+$", "", names(fixed.sampl))
+
+set.seed(1)
+for (i in 1:10) {
+  print(i)
+  outer <- sim.outer.tree(model)
+  phy <- as.phylo(outer)
+  
+  # append sample times (forward) to tip names
+  phy$tip.label <- paste(
+    phy$tip.label, 
+    fixed.sampl[match(names(fixed.sampl), phy$tip.label)],
+    sep="_"
+  )
+  
+  int.times <- get.integration.times(phy)
+  write.csv(as.data.frame(int.times), 
+            file=paste("data/latent1", i, 'times', 'csv', sep='.'))
+  write.tree(phy, file=paste("data/latent1", i, 'orig', 'nwk', sep='.'))
+  
+  # zero-out branch lengths for latent compartments
+  phy$edge.length[phy$from.type=='Latent'] <- 0
+  write.tree(phy, file=paste("data/latent1", i, 'cens', 'nwk', sep='.'))
+}
 
