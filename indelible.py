@@ -1,46 +1,52 @@
-"""
-Batch INDELible
-Write control.txt file and execute indelible to simulate sequences.
-"""
 import sys
 import os
 from Bio import Phylo
 import tempfile
 import argparse
+import subprocess
 
-parser = argparse.ArgumentParser("Simulate sequences on tree using INDELible")
-
-
+# command line interface
+parser = argparse.ArgumentParser("Simulate sequences using INDELible with a "
+                                 "user-specified tree and root sequence.")
+parser.add_argument("infile", type=str, help="Path to file containing Newick "
+                    "tree string")
+parser.add_argument("--root", type=str, default="AY772699.txt",
+                    help="Path to plain text file containing sequence "
+                         "to assign to root.")
+parser.add_argument("--sf", type=float, default=1.0,
+                    help="Scaling factor: expected number "
+                    "of substitutions per site across entire tree length. "
+                    "Defaults to 1.")
+parser.add_argument("--k1", type=float, default=4.0,
+                    help="Rate bias for C-T transitions.")
+parser.add_argument("--k2", type=float, default=8.0,
+                    help="Rate bias for A-G transitions.")
+args = parser.parse_args()
 
 # read tree from file
-infile = sys.argv[1]
-
-phy = Phylo.read(infile, 'newick')
+phy = Phylo.read(args.infile, 'newick')
 for node in phy.get_nonterminals():
     node.name = None
-tree_string = phy.format('newick')
+tree_string = phy.format('newick').rstrip('0123456789.;:\n')
 
-scaling_factor = 1.  # average one substitution per site in tree
+template = f"""[TYPE] NUCLEOTIDE 1
+[SETTINGS]
+  [output] FASTA
+  [printrates] FALSE
+[MODEL] model
+  [submodel] TrN {args.k1} {args.k2}
+  [statefreq] 0.2 0.2 0.4 0.2
+[TREE] tree {tree_string};
+  [treelength] {args.sf}
+[PARTITIONS] pname
+  [tree model {args.root}]
+[EVOLVE] pname 1 {args.infile}
+"""
 
-kappa1 = 4.0
-kappa2 = 8.0
+# write control text to a temporary file
+tmpfile = tempfile.NamedTemporaryFile('wt', delete=False)
+tmpfile.write(template)
+tmpfile.close()
 
-tmpfile = tempfile.NamedTemporaryFile(delete=False)
-handle = open('control.txt', 'w')
-
-# write minimal contents of INDELible control file
-handle.write('[TYPE] NUCLEOTIDE 1\n')
-handle.write('[SETTINGS]\n[output] FASTA\n[printrates] FALSE\n')
-handle.write('[MODEL] model\n[submodel] TrN %f %f\n' % (kappa1, kappa2))
-
-handle.write('[TREE] tree %s;\n' % tree_string.rstrip('0123456789.;:\n'))
-handle.write('[treelength] %1.5f\n' % scaling_factor)
-handle.write('[PARTITIONS] partitionname\n')
-handle.write("  [tree model AY772699.txt]\n")
-handle.write('[EVOLVE] partitionname 1 %s\n' % (infile, ))
-
-handle.close()
-
-#print 'running INDELIBLE'
-os.system('indelible')
-#os.system('/Users/art/src/INDELibleV1.03/src/indelible')  # can also use lldb
+# run INDELible with this control file
+subprocess.check_call(['indelible', tmpfile.name])
