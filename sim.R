@@ -3,22 +3,24 @@ require(twt, quietly=TRUE)
 setwd("~/git/bayroot/")
 model <- Model$new(yaml.load_file('latent1.yaml'))
 
-outer <- sim.outer.tree(model)
-plot(outer, type='s')  # to check population trends
-
-
-
-# colour branch below (towards root) internal node based on label
-# US_Active_28__US_Active_23 means transmission from US_Active_28 to US_Active_23
-phy <- as.phylo(outer)
-L <- tree.layout(phy)
-pch <- list('transmission'=17, 'transition'=1, 'tip'=19)
-
-plot(L, type='n') #, label='b', srt=30, cex=0.5)
-lines(L, col=ifelse(L$edges$from.type=='Active', 'red', 'blue'))
-points(L$edges$x1, L$edges$y1, cex=1,
-       pch=as.integer(pch[L$edges$event.type]))
-
+if (FALSE) {
+  set.seed(1)
+  outer <- sim.outer.tree(model)
+  plot(outer, type='s')  # to check population trends
+  
+  # colour branch below (towards root) internal node based on label
+  # US_Active_28__US_Active_23 means transmission from US_Active_28 to US_Active_23
+  phy <- as.phylo(outer)
+  L <- tree.layout(phy)
+  pch <- list('transmission'=17, 'transition'=1, 'tip'=19)
+  
+  #pdf("issue15.pdf", width=6, height=6)
+  plot(L, type='n') #, label='b', srt=30, cex=0.5)
+  lines(L, col=ifelse(L$edges$from.type=='Active', 'red', 'blue'))
+  points(L$edges$x1, L$edges$y1, cex=1,
+         pch=as.integer(pch[L$edges$event.type]))
+  #dev.off()  
+}
 
 
 get.integration.times <- function(phy) {
@@ -73,16 +75,13 @@ for (i in 1:10) {
   outer <- sim.outer.tree(model)
   phy <- as.phylo(outer)
   
-  # append sample times (forward) to tip names
-  phy$tip.label <- paste(
-    phy$tip.label, 
-    fixed.sampl[match(names(fixed.sampl), phy$tip.label)],
-    sep="_"
-  )
-  
   int.times <- get.integration.times(phy)
   write.csv(as.data.frame(int.times), 
             file=paste("data/latent1", i, 'times', 'csv', sep='.'))
+  
+  # append sample times (forward) to tip names
+  idx <- match(names(fixed.sampl), phy$tip.label)
+  phy$tip.label <- paste(phy$tip.label[idx], fixed.sampl, sep="_")
   write.tree(phy, file=paste("data/latent1", i, 'orig', 'nwk', sep='.'))
   
   # zero-out branch lengths for latent compartments
