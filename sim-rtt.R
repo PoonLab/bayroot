@@ -1,6 +1,10 @@
 # apply ML root-to-tip regression to simulated data
 # 
 require(chemCal)  # for inverse.predict
+require(ape)
+setwd("~/git/bayroot")
+source("bayroot.R")
+require(lubridate)
 
 fit.rtt <- function(treefile, csvfile, plot=FALSE) {
   phy <- read.tree(treefile)
@@ -44,7 +48,39 @@ fit.rtt <- function(treefile, csvfile, plot=FALSE) {
   sqrt(mean((pred.dates-true.dates[idx])^2))
 }
 
-setwd("~/git/bayroot")
+
+
+fit.bayroot <- function(treefile, csvfile, nstep=1e4, skip=100) {
+  phy <- read.tree(treefile)
+  
+  # modify tip labels so they can be parsed as dates
+  tip.dates <- sapply(phy$tip.label, function(x) as.integer(strsplit(x, "_")[[1]][3]))
+  tip.dates <- as.Date("2000-01-01") + months(tip.dates)
+  phy$tip.label <- paste(phy$tip.label, tip.dates, sep="_")
+  
+  tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
+  censored <- as.Date(ifelse(grepl("Active", phy$tip.label), tip.dates, NA), 
+                      origin='1970-01-01')
+  
+  phy <- reroot(phy, which.min(censored))
+  params <- list(phy=phy, rate=0.1, origin=min(censored, na.rm=T)-1)
+  
+  settings <- list(
+    # hyperpaameters
+    mindate=as.Date("2000-01-01"), maxdate=max(censored, na.rm=T),  # origin
+    meanlog=0, sdlog=1,  # rate
+    
+    # proposal parameters
+    root.delta=0.1*median(phy$edge.length),
+    date.sd=10,  # days
+    rate.delta=0.001
+    )
+  
+  chain <- mh(nstep=nstep, skip=skip, params=params, settings=settings)
+}
+
+
+
 files <- Sys.glob("data/latent1.*.ft2.nwk")
 
 for(tf in files) {

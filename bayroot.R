@@ -103,12 +103,12 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 #' @param origin {double}:  date at root
 #' @param rate {double}:  mutation rate, i.e., slope of linear regression
 #' @return {double}:  log-likelihood
-.lf <- function(phy, origin, rate) {
+.lf <- function(phy, origin, rate, format="%Y-%m-%d") {
   # extract tip distances from root, indexed as in phy$tip.label
   div <- node.depth.edgelength(phy)[1:Ntip(phy)]
   
   # time differences from origin, in days
-  tip.dates <- get.dates(phy)
+  tip.dates <- get.dates(phy, format=format)
   delta.t <- as.integer(tip.dates - origin)
   
   # compute Poisson model
