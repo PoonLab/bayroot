@@ -6,7 +6,7 @@ setwd("~/git/bayroot")
 source("bayroot.R")
 require(lubridate)
 
-fit.rtt <- function(treefile, csvfile, plot=FALSE) {
+fit.rtt <- function(treefile) {
   phy <- read.tree(treefile)
   phy <- multi2di(phy)
 
@@ -17,32 +17,40 @@ fit.rtt <- function(treefile, csvfile, plot=FALSE) {
   div <- node.depth.edgelength(rooted)[1:Ntip(rooted)]
   mod <- lm(div ~ censored)
   
-  # generate predictions
-  pred.dates <- sapply(div[is.na(censored)], function(y) {
-    inverse.predict(mod, y)$Prediction
-  })
+  result <- list(tip.dates=tip.dates, censored=censored, rooted=rooted, 
+                 div=div, mod=mod, pred.dates=pred.dates)
+  class(result) <- "fitrtt"
+  result
+}
 
+
+predict.fitrtt <- function(obj, csvfile) {
+  # generate predictions
+  sapply(obj$div[is.na(obj$censored)], function(y) {
+    inverse.predict(obj$mod, y)$Prediction
+  })
+}
+
+
+plot.fitrtt <- function(obj) {
+  plot(obj$tip.dates, obj$div, xlim=c(0, 20), ylim=range(obj$div),
+       pch=ifelse(is.na(obj$censored), 19, 1))
+  abline(obj$mod)
+
+  # show predicted times
+  pred.dates <- predict(obj)
+  points(pred.dates, obj$div[is.na(obj$censored)], col='red', pch=19, cex=0.8)
+  segments(x0=pred.dates, x1=obj$tip.dates[is.na(obj$censored)], 
+           y0=obj$div[is.na(obj$censored)], col='red')
+  
   # load true values (recorded as time before most recent sample)
   int.times <- read.csv(csvfile, row.names=1)
   idx <- match(row.names(int.times), 
-               gsub("^(.+)_[0-9]+$", "\\1", names(tip.dates)))
-  true.dates <- tip.dates[idx] - int.times$int.times
-  idx <- match(names(true.dates), rooted$tip.label[is.na(censored)])
+               gsub("^(.+)_[0-9]+$", "\\1", names(obj$tip.dates)))
+  true.dates <- obj$tip.dates[idx] - int.times$int.times
+  idx <- match(names(true.dates), obj$rooted$tip.label[is.na(obj$censored)])
   true.dates <- true.dates[idx]
-  
-  if (plot) {
-    par(mar=c(5,5,1,1))
-    plot(tip.dates, div, xlim=c(0, 20), ylim=range(div),
-         pch=ifelse(is.na(censored), 19, 1))
-    
-    # show predicted times
-    abline(mod)
-    points(pred.dates, div[is.na(censored)], col='red', pch=19, cex=0.8)
-    segments(x0=pred.dates, x1=tip.dates[is.na(censored)], 
-             y0=div[is.na(censored)], col='red')
-    # show true dates
-    points(true.dates, div[is.na(censored)], col='blue', pch=3, cex=0.8)
-  }
+  points(true.dates, obj$div[is.na(obj$censored)], col='blue', pch=3, cex=0.8)  
   
   # root-mean square error
   sqrt(mean((pred.dates-true.dates[idx])^2))
@@ -77,6 +85,8 @@ fit.bayroot <- function(treefile, csvfile, nstep=1e4, skip=100) {
     )
   
   chain <- mh(nstep=nstep, skip=skip, params=params, settings=settings)
+  pred.dates <- predict.bayroot(chain, phy$tip.label[is.na(censored)])
+  return(list(pred.dates=pred.dates, log=chain$log, treelog=chain$treelog))
 }
 
 
