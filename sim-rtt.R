@@ -50,7 +50,7 @@ fit.rtt <- function(treefile, csvfile, plot=FALSE) {
 
 
 
-fit.bayroot <- function(treefile, csvfile, nstep=1e4, skip=100) {
+fit.bayroot <- function(treefile, csvfile, nstep=1e4, skip=10) {
   phy <- read.tree(treefile)
   
   # modify tip labels so they can be parsed as dates
@@ -77,6 +77,10 @@ fit.bayroot <- function(treefile, csvfile, nstep=1e4, skip=100) {
     )
   
   chain <- mh(nstep=nstep, skip=skip, params=params, settings=settings)
+  pred.dates <- predict.bayroot(chain, phy$tip.label[is.na(censored)])
+  
+  return(list(phy=phy, pred.dates=pred.dates, tip.dates=tip.dates, 
+              censored=censored, log=chain$log, treelog=chain$treelog))
 }
 
 
