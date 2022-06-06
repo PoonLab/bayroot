@@ -86,8 +86,18 @@ fit.bayroot <- function(treefile, csvfile, nstep=1e4, skip=10) {
 
 
 files <- Sys.glob("data/latent1.*.ft2.nwk")
-
+tf <- files[1]
 for(tf in files) {
   cf <- gsub("\\.cens\\.nwk\\.fas\\.ft2\\.nwk", ".times.csv", tf)
   print(fit.rtt(tf, cf))
 }
+
+fit.rtt(tf, cf, plot=T)
+res <- fit.bayroot(tf, cf)
+bay.dates <- as.Date(apply(res$pred.dates, 2, mean), origin="1970-01-01")
+
+# convert to number of months since 2000-01-01
+bay.mons <- interval(as.Date("2000-01-01"), bay.dates) / months(1)
+names(bay.dates)
+
+
