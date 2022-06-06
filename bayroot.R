@@ -3,7 +3,7 @@ require(phytools)
 require(msm)
 require(ggfree)
 
-#' shift.root
+#' .shift.root
 #' Reroot the input tree by moving along the branches by step size
 #' drawn from uniform (0, delta).  If this step crosses an internal
 #' node, go up one of the child branches at random.
@@ -15,8 +15,7 @@ require(ggfree)
 #' phy <- rtree(5)
 #' par(mfrow=c(1,2))
 #' plot(phy); plot(proposal(phy, delta=0.5))
-#' @export
-shift.root <- function(phy, delta=NA) {
+.shift.root <- function(phy, delta=NA) {
   if (!is.rooted(phy)) {
     stop("Input tree must be rooted.")
   }
@@ -131,7 +130,7 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 }
 
 
-#' mh - Metropolis-Hastings sampler
+#' bayroot - Metropolis-Hastings sampler
 #' 
 #' origin = date of most recent common ancestor (root of tree), i.e.,
 #'          x-intercept in root-to-tip regression
@@ -151,7 +150,7 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 #'                  {character} treelog, Newick serializations of rooted trees
 #'                  in chain sample.
 #' @export
-mh <- function(nstep, params, settings, skip=10, echo=FALSE) {
+bayroot <- function(nstep, params, settings, skip=10, echo=FALSE) {
   # deep copy
   next.params <- list(origin=params$origin, rate=params$rate, phy=params$phy)
   
@@ -172,7 +171,7 @@ mh <- function(nstep, params, settings, skip=10, echo=FALSE) {
   # propagate chain sample
   for (i in 1:nstep) {
     # proposal
-    next.params$phy <- shift.root(params$phy, delta=settings$root.delta)
+    next.params$phy <- .shift.root(params$phy, delta=settings$root.delta)
     next.params$origin <- as.Date(round(
         rtnorm(1, mean=as.integer(params$origin), sd=settings$date.sd, 
                upper=as.integer(min.date)-1)

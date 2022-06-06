@@ -6,46 +6,58 @@ setwd("~/git/bayroot")
 source("bayroot.R")
 require(lubridate)
 
-fit.rtt <- function(treefile, csvfile, plot=FALSE) {
-  phy <- read.tree(treefile)
+#' Fit root-to-tip regression to tree
+root2tip <- function(phy) {
   phy <- multi2di(phy)
-
-  # fit RTT model
+  
   tip.dates <- sapply(phy$tip.label, function(x) as.integer(strsplit(x, "_")[[1]][3]))
   censored <- ifelse(grepl("Active", names(tip.dates)), tip.dates, NA)
-  rooted <- rtt(t=phy, tip.dates=censored)
-  div <- node.depth.edgelength(rooted)[1:Ntip(rooted)]
-  mod <- lm(div ~ censored)
+  names(censored) <- names(tip.dates)
   
-  # generate predictions
-  pred.dates <- sapply(div[is.na(censored)], function(y) {
-    inverse.predict(mod, y)$Prediction
+  rooted <- rtt(t=phy, tip.dates=censored)
+  
+  div <- node.depth.edgelength(rooted)[1:Ntip(rooted)]
+  names(div) <- rooted$tip.label
+  
+  fit <- lm(div ~ censored)
+  
+  pred <- sapply(obj$div[is.na(obj$censored)], function(y) {
+    inverse.predict(obj$fit, y)$Prediction
   })
+  
+  result <- list(phy=phy, tip.dates=tip.dates, censored=censored,
+                 rooted=rooted, div=div, fit=fit, pred=pred)
+  class(result) <- "root2tip"
+  result
+}
 
+
+get.true.values <- function(obj, csvfile) {
+  if (class(obj) != "root2tip") {
+    stop("ERROR: expecting obj of class 'root2tip'")
+  }
   # load true values (recorded as time before most recent sample)
   int.times <- read.csv(csvfile, row.names=1)
   idx <- match(row.names(int.times), 
-               gsub("^(.+)_[0-9]+$", "\\1", names(tip.dates)))
-  true.dates <- tip.dates[idx] - int.times$int.times
-  idx <- match(names(true.dates), rooted$tip.label[is.na(censored)])
-  true.dates <- true.dates[idx]
+               gsub("^(.+)_[0-9]+$", "\\1", names(obj$tip.dates)))
   
-  if (plot) {
-    par(mar=c(5,5,1,1))
-    plot(tip.dates, div, xlim=c(0, 20), ylim=range(div),
-         pch=ifelse(is.na(censored), 19, 1))
-    
-    # show predicted times
-    abline(mod)
-    points(pred.dates, div[is.na(censored)], col='red', pch=19, cex=0.8)
-    segments(x0=pred.dates, x1=tip.dates[is.na(censored)], 
-             y0=div[is.na(censored)], col='red')
-    # show true dates
-    points(true.dates, div[is.na(censored)], col='blue', pch=3, cex=0.8)
-  }
+  true.dates <- obj$tip.dates[idx] - int.times$int.times
+  idx <- match(names(obj$pred), names(true.dates))
+  true.dates[idx]
+}
+
+
+plot.root2tip <- function(obj, true.vals, ...) {
+  plot(obj$tip.dates, obj$div, xlim=c(0, 20), ylim=range(obj$div),
+       col=ifelse(is.na(obj$censored), 'red', 'black'), ...)
   
-  # root-mean square error
-  sqrt(mean((pred.dates-true.dates[idx])^2))
+  abline(obj$fit)
+  red <- rgb(1,0,0,0.5)
+  points(obj$pred, obj$div[is.na(obj$censored)], col=red, pch=19, cex=0.8)
+  segments(x0=obj$pred, x1=obj$tip.dates[is.na(obj$censored)], 
+           y0=obj$div[is.na(obj$censored)], col=red)
+  # show true dates
+  points(true.vals, obj$div[is.na(obj$censored)], pch=3, cex=0.8, lwd=2)  
 }
 
 
@@ -76,8 +88,11 @@ fit.bayroot <- function(treefile, csvfile, nstep=1e4, skip=10) {
     rate.delta=0.001
     )
   
-  chain <- mh(nstep=nstep, skip=skip, params=params, settings=settings)
-  pred.dates <- predict.bayroot(chain, phy$tip.label[is.na(censored)])
+  # 1000 samples
+  chain <- bayroot(nstep=nstep, skip=skip, params=params, settings=settings)
+  
+  # 200 samples
+  pred.dates <- predict(chain, phy$tip.label[is.na(censored)], burnin=100, thin=180)
   
   return(list(phy=phy, pred.dates=pred.dates, tip.dates=tip.dates, 
               censored=censored, log=chain$log, treelog=chain$treelog))
@@ -85,19 +100,55 @@ fit.bayroot <- function(treefile, csvfile, nstep=1e4, skip=10) {
 
 
 
+
 files <- Sys.glob("data/latent1.*.ft2.nwk")
 tf <- files[1]
-for(tf in files) {
-  cf <- gsub("\\.cens\\.nwk\\.fas\\.ft2\\.nwk", ".times.csv", tf)
-  print(fit.rtt(tf, cf))
-}
+cf <- gsub("\\.cens\\.nwk\\.fas\\.ft2\\.nwk", ".times.csv", tf)
 
-fit.rtt(tf, cf, plot=T)
+# try one replicate first
+phy <- read.tree(tf)
+rt <- root2tip(phy)
+true.vals <- get.true.values(rt, cf)
+
+rmse.rtt <- sqrt(mean((pred.vals-true.vals)^2))
+
 res <- fit.bayroot(tf, cf)
-bay.dates <- as.Date(apply(res$pred.dates, 2, mean), origin="1970-01-01")
+bay.mean <- as.Date(apply(res$pred.dates, 2, mean), origin="1970-01-01")
+bay.lo <- as.Date(apply(res$pred.dates, 2, function(x) quantile(x, 0.025)), 
+                  origin="1970-01-01")
+bay.hi <- as.Date(apply(res$pred.dates, 2, function(x) quantile(x, 0.975)), 
+                  origin="1970-01-01")
 
 # convert to number of months since 2000-01-01
-bay.mons <- interval(as.Date("2000-01-01"), bay.dates) / months(1)
-names(bay.dates)
+bay.mean <- interval(as.Date("2000-01-01"), bay.mean) / months(1)
+bay.lo <- interval(as.Date("2000-01-01"), bay.lo) / months(1)
+bay.hi <- interval(as.Date("2000-01-01"), bay.hi) / months(1)
+
+rmse.bay <- sqrt(mean((bay.mean - true.vals)^2))
+
+names(bay.mons) <- gsub("^(.+)_[0-9]+-[0-9]+-[0-9]+$", "\\1", names(bay.dates))
+
+plot(rt, true.vals=true.vals, xlab="Collection date (months since origin)",
+     ylab="Divergence")
+points(bay.mons, rt$div[is.na(rt$censored)], pch=19, col=rgb(0,0,1,0.5), cex=0.8)
+segments(x0=bay.lo, x1=bay.hi, y0=rt$div[is.na(rt$censored)], col=rgb(0,0,1,0.5))
 
 
+results <- data.frame(filename=files, rtt=NA, bayroot=NA)
+for(i in 1:length(files)) {
+  tf <- files[i]
+  print(tf)
+  cf <- gsub("\\.cens\\.nwk\\.fas\\.ft2\\.nwk", ".times.csv", tf)
+  phy <- read.tree(tf)
+  
+  # root to tip
+  rt <- root2tip(phy)
+  true.vals <- get.true.values(rt, cf)
+  results$rtt[i] <- sqrt(mean((pred.vals-true.vals)^2))
+  
+  # Bayesian
+  res <- fit.bayroot(tf, cf)
+  bay.mean <- as.Date(apply(res$pred.dates, 2, mean), origin="1970-01-01")
+  bay.mean <- interval(as.Date("2000-01-01"), bay.mean) / months(1)
+  results$bayroot[i] <- sqrt(mean((bay.mean - true.vals)^2))  
+}
