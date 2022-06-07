@@ -21,8 +21,8 @@ root2tip <- function(phy) {
   
   fit <- lm(div ~ censored)
   
-  pred <- sapply(obj$div[is.na(obj$censored)], function(y) {
-    inverse.predict(obj$fit, y)$Prediction
+  pred <- sapply(div[is.na(censored)], function(y) {
+    inverse.predict(fit, y)$Prediction
   })
   
   result <- list(phy=phy, tip.dates=tip.dates, censored=censored,
@@ -49,15 +49,19 @@ get.true.values <- function(obj, csvfile) {
 
 plot.root2tip <- function(obj, true.vals, ...) {
   plot(obj$tip.dates, obj$div, xlim=c(0, 20), ylim=range(obj$div),
-       col=ifelse(is.na(obj$censored), 'red', 'black'), ...)
+       col=ifelse(is.na(obj$censored), 'red', 'black'))
   
   abline(obj$fit)
   red <- rgb(1,0,0,0.5)
-  points(obj$pred, obj$div[is.na(obj$censored)], col=red, pch=19, cex=0.8)
+  x <- obj$pred
+  y <- obj$div[is.na(obj$censored)]
+  
+  points(x, y, col=red, pch=19, cex=0.8)
+  
   segments(x0=obj$pred, x1=obj$tip.dates[is.na(obj$censored)], 
-           y0=obj$div[is.na(obj$censored)], col=red)
+           y0=y, col=red)
   # show true dates
-  points(true.vals, obj$div[is.na(obj$censored)], pch=3, cex=0.8, lwd=2)  
+  points(true.vals, y, pch=3, cex=0.8, lwd=2)  
 }
 
 
@@ -75,16 +79,16 @@ fit.bayroot <- function(treefile, csvfile, nstep=1e4, skip=10) {
                       origin='1970-01-01')
   
   phy <- reroot(phy, which.min(censored))
-  params <- list(phy=phy, rate=0.1, origin=min(censored, na.rm=T)-1)
+  params <- list(phy=phy, rate=1e-5, origin=min(censored, na.rm=T)-1)
   
   settings <- list(
     # hyperpaameters
-    mindate=as.Date("2000-01-01"), maxdate=max(censored, na.rm=T),  # origin
-    meanlog=0, sdlog=1,  # rate
+    mindate=as.Date("1999-01-01"), maxdate=min(censored, na.rm=T),  # origin
+    meanlog=-8, sdlog=2,  # rate
     
     # proposal parameters
-    root.delta=0.1*median(phy$edge.length),
-    date.sd=10,  # days
+    root.delta=sum(phy$edge.length)/100,
+    date.sd=60,  # days, origin proposal
     rate.delta=0.001
     )
   
@@ -92,10 +96,10 @@ fit.bayroot <- function(treefile, csvfile, nstep=1e4, skip=10) {
   chain <- bayroot(nstep=nstep, skip=skip, params=params, settings=settings)
   
   # 200 samples
-  pred.dates <- predict(chain, phy$tip.label[is.na(censored)], burnin=100, thin=180)
+  pred.dates <- predict(chain, phy$tip.label[is.na(censored)], burnin=100, thin=200)
   
   return(list(phy=phy, pred.dates=pred.dates, tip.dates=tip.dates, 
-              censored=censored, log=chain$log, treelog=chain$treelog))
+              censored=censored, chain=chain))
 }
 
 
@@ -110,9 +114,25 @@ phy <- read.tree(tf)
 rt <- root2tip(phy)
 true.vals <- get.true.values(rt, cf)
 
-rmse.rtt <- sqrt(mean((pred.vals-true.vals)^2))
+rmse.rtt <- sqrt(mean((rt$pred-true.vals)^2))
 
-res <- fit.bayroot(tf, cf)
+res <- fit.bayroot(tf, cf, nstep=1e5, skip=100)
+
+par(mar=c(5,5,1,1))
+plot(rt, true.vals=true.vals, xlab="Collection date (months since origin)",
+     ylab="Divergence")
+
+#temp <- res$pred.dates[[1]]
+dt2months <- function(dt, refdate="2000-01-01") {
+  interval(as.Date(refdate), as.Date(dt, origin="1970-01-01")) / months(1)
+}
+for (temp in res$pred.dates) {
+  points(x=dt2months(temp$int.date), y=temp$div, pch=18, cex=0.5, 
+         col=rgb(0,0,1,0.2))  
+}
+
+
+
 bay.mean <- as.Date(apply(res$pred.dates, 2, mean), origin="1970-01-01")
 bay.lo <- as.Date(apply(res$pred.dates, 2, function(x) quantile(x, 0.025)), 
                   origin="1970-01-01")
@@ -128,12 +148,18 @@ rmse.bay <- sqrt(mean((bay.mean - true.vals)^2))
 
 names(bay.mons) <- gsub("^(.+)_[0-9]+-[0-9]+-[0-9]+$", "\\1", names(bay.dates))
 
+# display results
 plot(rt, true.vals=true.vals, xlab="Collection date (months since origin)",
      ylab="Divergence")
 points(bay.mons, rt$div[is.na(rt$censored)], pch=19, col=rgb(0,0,1,0.5), cex=0.8)
 segments(x0=bay.lo, x1=bay.hi, y0=rt$div[is.na(rt$censored)], col=rgb(0,0,1,0.5))
 
+legend(x=13, y=0.05, legend=c("RTT", "bayroot", "true date"), 
+       col=c('red', 'blue', 'black'), pch=c(19, 19, 3), pt.lwd=2, 
+       bty='n')
 
+
+# batch processing
 results <- data.frame(filename=files, rtt=NA, bayroot=NA)
 for(i in 1:length(files)) {
   tf <- files[i]

@@ -342,10 +342,13 @@ predict.bayroot <- function(obj, censored, max.date=NA, burnin=10, thin=100,
   }
   
   # prepare output container
-  res <- matrix(NA, nrow=length(rows), ncol=length(censored))
-  res <- as.data.frame(res)
-  names(res) <- censored
-  row.names(res) <- rows
+  res <- list()
+  for (label in censored) {
+    res[[label]] <- data.frame(
+      int.date=rep(NA, times=length(rows)),  # integration date
+      div=rep(NA, times=length(rows)))  # divergence
+    row.names(res[[label]]) <- rows
+  }
   
   for (i in 1:length(rows)) {
     step <- rows[i]
@@ -361,7 +364,8 @@ predict.bayroot <- function(obj, censored, max.date=NA, burnin=10, thin=100,
     
     # sample integration times for censored tips given divergence
     div <- node.depth.edgelength(phy)[1:Ntip(phy)]
-    samp <- sapply(which(is.element(labels, censored)), function(i) {
+    idx <- which(is.element(labels, censored))
+    samp <- sapply(idx, function(i) {
       # in case censored tip sampled before last uncensored tip (max.date)
       this.max.date <- min(max.date, dates[i])
       .sample.pdfunc(div[i], rate, origin, this.max.date)
@@ -369,7 +373,11 @@ predict.bayroot <- function(obj, censored, max.date=NA, burnin=10, thin=100,
     names(samp) <- labels[is.element(labels, censored)]
     
     # append sampled dates to container
-    res[i, ] <- samp[match(names(samp), names(res))]
+    for (j in 1:length(censored)) {
+      label <- censored[j]
+      res[[label]][i, 1] <- samp[[label]]
+      res[[label]][i, 2] <- div[idx[j]]
+    }
   }
   return(res)
 }

@@ -1,7 +1,8 @@
 require(twt, quietly=TRUE)
 
 setwd("~/git/bayroot/")
-model <- Model$new(yaml.load_file('latent1.yaml'))
+prefix <- "latent1"
+model <- Model$new(yaml.load_file(paste0(prefix, '.yaml')))
 
 if (FALSE) {
   set.seed(1)
@@ -77,15 +78,15 @@ for (i in 1:10) {
   
   int.times <- get.integration.times(phy)
   write.csv(as.data.frame(int.times), 
-            file=paste("data/latent1", i, 'times', 'csv', sep='.'))
+            file=paste0("data/", prefix, ".", i, '.times.csv'))
   
   # append sample times (forward) to tip names
-  idx <- match(names(fixed.sampl), phy$tip.label)
-  phy$tip.label <- paste(phy$tip.label[idx], fixed.sampl, sep="_")
-  write.tree(phy, file=paste("data/latent1", i, 'orig', 'nwk', sep='.'))
+  idx <- match(phy$tip.label, names(fixed.sampl))
+  phy$tip.label <- paste(phy$tip.label, fixed.sampl[idx], sep="_")
+  write.tree(phy, file=paste0("data/", prefix, ".", i, '.orig.nwk'))
   
   # zero-out branch lengths for latent compartments
   phy$edge.length[phy$from.type=='Latent'] <- 0
-  write.tree(phy, file=paste("data/latent1", i, 'cens', 'nwk', sep='.'))
+  write.tree(phy, file=paste0("data/", prefix, ".", i, '.cens.nwk'))
 }
 
