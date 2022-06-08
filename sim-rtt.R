@@ -47,9 +47,12 @@ get.true.values <- function(obj, csvfile) {
 }
 
 
-plot.root2tip <- function(obj, true.vals, ...) {
-  plot(obj$tip.dates, obj$div, xlim=c(0, 20), ylim=range(obj$div),
-       col=ifelse(is.na(obj$censored), 'red', 'black'))
+plot.root2tip <- function(obj, true.vals, xlim=xlim, ylim=NA, ...) {
+  if (any(is.na(ylim))) {
+    ylim <- range(obj$div)
+  }
+  plot(obj$tip.dates, obj$div, xlim=xlim, ylim=ylim,
+       col=ifelse(is.na(obj$censored), 'red', 'black'), ...)
   
   abline(obj$fit)
   red <- rgb(1,0,0,0.5)
@@ -65,8 +68,24 @@ plot.root2tip <- function(obj, true.vals, ...) {
 }
 
 
+settings <- list(
+  seq.len=1233,  # AY772699
+  censored=phy$tip.label[grepl("^Latent", phy$tip.label)],
+  format="%Y-%m-%d",
+  
+  # hyperpaameters
+  mindate=as.Date("1999-01-01"), maxdate=min(censored, na.rm=T),  # origin
+  #mindate=as.Date("1999-12-01"), maxdate=as.Date("2000-02-01"),  # origin
+  meanlog=-5, sdlog=2,  # rate
+  
+  # proposal parameters
+  root.delta=2*mean(phy$edge.length),
+  date.sd=10,  # days, origin proposal
+  rate.delta=0.01
+)
 
-fit.bayroot <- function(treefile, csvfile, nstep=1e4, skip=10) {
+
+fit.bayroot <- function(treefile, csvfile, settings, nstep=1e4, skip=10) {
   phy <- read.tree(treefile)
   
   # modify tip labels so they can be parsed as dates
@@ -79,24 +98,13 @@ fit.bayroot <- function(treefile, csvfile, nstep=1e4, skip=10) {
                       origin='1970-01-01')
   
   phy <- reroot(phy, which.min(censored))
-  params <- list(phy=phy, rate=1e-5, origin=min(censored, na.rm=T)-1)
-  
-  settings <- list(
-    # hyperpaameters
-    mindate=as.Date("1999-01-01"), maxdate=min(censored, na.rm=T),  # origin
-    meanlog=-8, sdlog=2,  # rate
-    
-    # proposal parameters
-    root.delta=sum(phy$edge.length)/100,
-    date.sd=60,  # days, origin proposal
-    rate.delta=0.001
-    )
+  params <- list(phy=phy, rate=0.1, origin=min(censored, na.rm=T)-1)
   
   # 1000 samples
   chain <- bayroot(nstep=nstep, skip=skip, params=params, settings=settings)
   
   # 200 samples
-  pred.dates <- predict(chain, phy$tip.label[is.na(censored)], burnin=100, thin=200)
+  pred.dates <- predict(chain, settings, burnin=100, thin=200)
   
   return(list(phy=phy, pred.dates=pred.dates, tip.dates=tip.dates, 
               censored=censored, chain=chain))
@@ -116,18 +124,19 @@ true.vals <- get.true.values(rt, cf)
 
 rmse.rtt <- sqrt(mean((rt$pred-true.vals)^2))
 
-res <- fit.bayroot(tf, cf, nstep=1e5, skip=100)
+res <- fit.bayroot(tf, cf, settings=settings, nstep=1e4, skip=10)
 
 par(mar=c(5,5,1,1))
-plot(rt, true.vals=true.vals, xlab="Collection date (months since origin)",
-     ylab="Divergence")
+plot(rt, true.vals=true.vals, xlim=c(-10, 20),
+     xlab="Collection date (months since origin)",
+     ylab="Divergence", ylim=c(0, 0.16))
 
 #temp <- res$pred.dates[[1]]
 dt2months <- function(dt, refdate="2000-01-01") {
   interval(as.Date(refdate), as.Date(dt, origin="1970-01-01")) / months(1)
 }
 for (temp in res$pred.dates) {
-  points(x=dt2months(temp$int.date), y=temp$div, pch=18, cex=0.5, 
+  points(x=dt2months(temp$int.date), y=temp$div, pch=19, cex=0.5, 
          col=rgb(0,0,1,0.2))  
 }
 

@@ -88,8 +88,9 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 
 
 #' .lf - likelihood function
-#' Calculate likelihood of divergences given input tree and sampling 
-#' times.  Assume a linear relationship between divergence and time with 
+#' Calculate likelihood of divergences (number of mutations) given 
+#' input tree and sampling times.  
+#' Assume a linear relationship between divergence and time with 
 #' slope {rate} and x-intercept {origin}.
 #' Employ Poisson distributions centered on this trend line 
 #' with variance equal to mean.
@@ -102,12 +103,13 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 #' @param origin {double}:  date at root
 #' @param rate {double}:  mutation rate, i.e., slope of linear regression
 #' @return {double}:  log-likelihood
-.lf <- function(phy, origin, rate, format="%Y-%m-%d") {
+.lf <- function(phy, origin, rate, settings) {
   # extract tip distances from root, indexed as in phy$tip.label
-  div <- node.depth.edgelength(phy)[1:Ntip(phy)]
+  div <- node.depth.edgelength(phy)[1:Ntip(phy)] * settings$seq.len
   
   # time differences from origin, in days
-  tip.dates <- get.dates(phy, format=format)
+  tip.dates <- get.dates(phy, format=settings$format)
+  tip.dates[match(settings$censored, phy$tip.label)] <- NA
   delta.t <- as.integer(tip.dates - origin)
   
   # compute Poisson model
@@ -151,11 +153,15 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 #'                  in chain sample.
 #' @export
 bayroot <- function(nstep, params, settings, skip=10, echo=FALSE) {
+  if (is.null(settings$format)) {
+    settings$format = "%Y-%m-%d"
+  }
   # deep copy
   next.params <- list(origin=params$origin, rate=params$rate, phy=params$phy)
   
   # posterior probability of initial state
-  llk <- .lf(params$phy, origin=params$origin, rate=params$rate)
+  llk <- .lf(params$phy, origin=params$origin, rate=params$rate, 
+             settings=settings)
   lprior <- .prior(origin=params$origin, rate=params$rate, hyper=settings)
   lpost <- llk + lprior
   
@@ -184,7 +190,8 @@ bayroot <- function(nstep, params, settings, skip=10, echo=FALSE) {
       next.params$rate <- params$rate + rate.delta
     }
     
-    next.llk <- .lf(next.params$phy, origin=next.params$origin, rate=next.params$rate)
+    next.llk <- .lf(next.params$phy, origin=next.params$origin, 
+                    rate=next.params$rate, settings=settings)
     next.lprior <- .prior(origin=next.params$origin, rate=next.params$rate, hyper=settings)
     next.lpost <- next.llk + next.lprior
     if (is.infinite(next.lpost)) {
@@ -222,7 +229,7 @@ bayroot <- function(nstep, params, settings, skip=10, echo=FALSE) {
 #'                    plot traces of posterior and model parameters.
 #' @param burnin {int}: number of steps in chain sample to discard as burnin.
 #' @export
-plot.bayroot <- function(obj, step=NA, burnin=1) {
+plot.bayroot <- function(obj, settings, step=NA, burnin=1) {
   if (is.na(step)) {
     orig.par <- par(mfrow=c(3,2))
     end <- nrow(obj$log)
@@ -244,7 +251,7 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
   }
   else{
     phy <- read.tree(text=obj$treelog[step])
-    div <- node.depth.edgelength(phy)[1:Ntip(phy)]
+    div <- node.depth.edgelength(phy)[1:Ntip(phy)] * settings$seq.len
     tip.dates <- get.dates(phy)
     origin <- obj$log$origin[step]
     rate <- obj$log$rate[step]
@@ -277,6 +284,7 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 #' probability distribution function for integration time (t)
 #' given divergence (y)
 .pdfunc <- function(t, y, rate, t0, tmax) {
+  # note t and t0 are Date objects, so we have to convert them
   L <- rate*(as.integer(t)-as.integer(t0))
   exp(log(rate) + y*log(L) - L - 
         .inc.gamma(y+1, rate*(as.integer(tmax)-as.integer(t0)), log=T))
@@ -330,20 +338,19 @@ plot.bayroot <- function(obj, step=NA, burnin=1) {
 #' @return {data.frame}:  sampled dates as {double} values; each row corresponds
 #'                        to a step, and each column to a censored tip.
 #' @export
-predict.bayroot <- function(obj, censored, max.date=NA, burnin=10, thin=100,
-                            delimiter="_", pos=-1, format="%Y-%m-%d") {
+predict.bayroot <- function(obj, settings, max.date=NA, burnin=10, thin=100) {
   rows <- as.integer(seq(burnin, nrow(obj$log), length.out=thin))
   
   phy <- read.tree(text=obj$treelog[1])
-  tip.dates <- get.dates(phy, delimiter=delimiter, pos=pos, format=format)
+  tip.dates <- get.dates(phy, format=settings$format)
   if (is.na(max.date)) {
     # limit to uncensored tips
-    max.date <- max(tip.dates[!is.element(phy$tip.label, censored)], na.rm=T)
+    max.date <- max(tip.dates[!is.element(phy$tip.label, settings$censored)], na.rm=T)
   }
   
   # prepare output container
   res <- list()
-  for (label in censored) {
+  for (label in settings$censored) {
     res[[label]] <- data.frame(
       int.date=rep(NA, times=length(rows)),  # integration date
       div=rep(NA, times=length(rows)))  # divergence
@@ -360,23 +367,24 @@ predict.bayroot <- function(obj, censored, max.date=NA, burnin=10, thin=100,
     
     # tip label order changes with re-rooting and calling read.tree()
     labels <- phy$tip.label
-    dates <- get.dates(phy, delimiter=delimiter, pos=pos, format=format)
+    dates <- get.dates(phy, format=settings$format)
     
     # sample integration times for censored tips given divergence
-    div <- node.depth.edgelength(phy)[1:Ntip(phy)]
-    idx <- which(is.element(labels, censored))
+    div <- node.depth.edgelength(phy)[1:Ntip(phy)] * settings$seq.len
+    names(div) <- phy$tip.label
+    
+    idx <- which(is.element(labels, settings$censored))
     samp <- sapply(idx, function(i) {
       # in case censored tip sampled before last uncensored tip (max.date)
       this.max.date <- min(max.date, dates[i])
       .sample.pdfunc(div[i], rate, origin, this.max.date)
       })
-    names(samp) <- labels[is.element(labels, censored)]
+    names(samp) <- labels[idx]
     
     # append sampled dates to container
-    for (j in 1:length(censored)) {
-      label <- censored[j]
+    for (label in settings$censored) {
       res[[label]][i, 1] <- samp[[label]]
-      res[[label]][i, 2] <- div[idx[j]]
+      res[[label]][i, 2] <- div[[label]]
     }
   }
   return(res)
