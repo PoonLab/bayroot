@@ -47,11 +47,8 @@ get.true.values <- function(obj, csvfile) {
 }
 
 
-plot.root2tip <- function(obj, true.vals, xlim=xlim, ylim=NA, ...) {
-  if (any(is.na(ylim))) {
-    ylim <- range(obj$div)
-  }
-  plot(obj$tip.dates, obj$div, xlim=xlim, ylim=ylim,
+plot.root2tip <- function(obj, true.vals, ...) {
+  plot.default(obj$tip.dates, obj$div, 
        col=ifelse(is.na(obj$censored), 'red', 'black'), ...)
   
   abline(obj$fit)
@@ -70,12 +67,12 @@ plot.root2tip <- function(obj, true.vals, xlim=xlim, ylim=NA, ...) {
 
 settings <- list(
   seq.len=1233,  # AY772699
-  censored=phy$tip.label[grepl("^Latent", phy$tip.label)],
   format="%Y-%m-%d",
   
-  # hyperpaameters
-  mindate=as.Date("1999-01-01"), maxdate=min(censored, na.rm=T),  # origin
-  #mindate=as.Date("1999-12-01"), maxdate=as.Date("2000-02-01"),  # origin
+  # hyperparameters
+  mindate=as.Date("1999-01-01"), 
+  maxdate=as.Date("2000-04-01"),  # origin
+  
   meanlog=-5, sdlog=2,  # rate
   
   # proposal parameters
@@ -91,7 +88,9 @@ fit.bayroot <- function(treefile, csvfile, settings, nstep=1e4, skip=10) {
   # modify tip labels so they can be parsed as dates
   tip.dates <- sapply(phy$tip.label, function(x) as.integer(strsplit(x, "_")[[1]][3]))
   tip.dates <- as.Date("2000-01-01") + months(tip.dates)
+  
   phy$tip.label <- paste(phy$tip.label, tip.dates, sep="_")
+  settings$censored <- phy$tip.label[grepl("^Latent", phy$tip.label)]
   
   tip.dates <- as.Date(sapply(phy$tip.label, function(x) strsplit(x, "_")[[1]][4]))
   censored <- as.Date(ifelse(grepl("Active", phy$tip.label), tip.dates, NA), 
@@ -104,7 +103,8 @@ fit.bayroot <- function(treefile, csvfile, settings, nstep=1e4, skip=10) {
   chain <- bayroot(nstep=nstep, skip=skip, params=params, settings=settings)
   
   # 200 samples
-  pred.dates <- predict(chain, settings, burnin=100, thin=200)
+  pred.dates <- predict(chain, settings, max.date=as.Date("2000-11-01"), 
+                        burnin=100, thin=200)
   
   return(list(phy=phy, pred.dates=pred.dates, tip.dates=tip.dates, 
               censored=censored, chain=chain))
@@ -114,7 +114,7 @@ fit.bayroot <- function(treefile, csvfile, settings, nstep=1e4, skip=10) {
 
 
 files <- Sys.glob("data/latent1.*.ft2.nwk")
-tf <- files[1]
+tf <- files[2]
 cf <- gsub("\\.cens\\.nwk\\.fas\\.ft2\\.nwk", ".times.csv", tf)
 
 # try one replicate first
@@ -124,28 +124,24 @@ true.vals <- get.true.values(rt, cf)
 
 rmse.rtt <- sqrt(mean((rt$pred-true.vals)^2))
 
-res <- fit.bayroot(tf, cf, settings=settings, nstep=1e4, skip=10)
-
-par(mar=c(5,5,1,1))
-plot(rt, true.vals=true.vals, xlim=c(-10, 20),
-     xlab="Collection date (months since origin)",
-     ylab="Divergence", ylim=c(0, 0.16))
+res <- fit.bayroot(tf, cf, settings=settings, nstep=2e4, skip=20)
 
 #temp <- res$pred.dates[[1]]
 dt2months <- function(dt, refdate="2000-01-01") {
   interval(as.Date(refdate), as.Date(dt, origin="1970-01-01")) / months(1)
 }
 for (temp in res$pred.dates) {
-  points(x=dt2months(temp$int.date), y=temp$div, pch=19, cex=0.5, 
+  points(x=dt2months(temp$int.date), y=temp$div/settings$seq.len, pch=19, cex=0.5, 
          col=rgb(0,0,1,0.2))  
 }
 
 
-
-bay.mean <- as.Date(apply(res$pred.dates, 2, mean), origin="1970-01-01")
-bay.lo <- as.Date(apply(res$pred.dates, 2, function(x) quantile(x, 0.025)), 
+# calculate means
+bay.mean <- as.Date(sapply(res$pred.dates, function(x) mean(x$int.date)),
+                    origin="1970-01-01")
+bay.lo <- as.Date(sapply(res$pred.dates, function(x) quantile(x$int.date, 0.025)),
                   origin="1970-01-01")
-bay.hi <- as.Date(apply(res$pred.dates, 2, function(x) quantile(x, 0.975)), 
+bay.hi <- as.Date(sapply(res$pred.dates, function(x) quantile(x$int.date, 0.975)),
                   origin="1970-01-01")
 
 # convert to number of months since 2000-01-01
@@ -155,17 +151,19 @@ bay.hi <- interval(as.Date("2000-01-01"), bay.hi) / months(1)
 
 rmse.bay <- sqrt(mean((bay.mean - true.vals)^2))
 
-names(bay.mons) <- gsub("^(.+)_[0-9]+-[0-9]+-[0-9]+$", "\\1", names(bay.dates))
+bay.div <- sapply(res$pred.dates, function(x) mean(x$div) / settings$seq.len)
 
 # display results
+#pdf(file="latent1.1.compare.pdf", width=5, height=5)
 plot(rt, true.vals=true.vals, xlab="Collection date (months since origin)",
      ylab="Divergence")
-points(bay.mons, rt$div[is.na(rt$censored)], pch=19, col=rgb(0,0,1,0.5), cex=0.8)
-segments(x0=bay.lo, x1=bay.hi, y0=rt$div[is.na(rt$censored)], col=rgb(0,0,1,0.5))
+points(bay.mean, bay.div, pch=19, col=rgb(0,0,1,0.5), cex=0.8)
+segments(x0=bay.lo, x1=bay.hi, y0=bay.div, col=rgb(0,0,1,0.5))
+abline(v=10, lty=2)
+legend(x=13, y=0.1, legend=c("RTT", "bayroot", "true date"), 
+       col=c('red', 'blue', 'black'), pch=c(19, 19, 3), pt.lwd=2)
+#dev.off()
 
-legend(x=13, y=0.05, legend=c("RTT", "bayroot", "true date"), 
-       col=c('red', 'blue', 'black'), pch=c(19, 19, 3), pt.lwd=2, 
-       bty='n')
 
 
 # batch processing
@@ -179,11 +177,12 @@ for(i in 1:length(files)) {
   # root to tip
   rt <- root2tip(phy)
   true.vals <- get.true.values(rt, cf)
-  results$rtt[i] <- sqrt(mean((pred.vals-true.vals)^2))
+  results$rtt[i] <- sqrt(mean((rt$pred-true.vals)^2))
   
   # Bayesian
-  res <- fit.bayroot(tf, cf)
-  bay.mean <- as.Date(apply(res$pred.dates, 2, mean), origin="1970-01-01")
+  res <- fit.bayroot(tf, cf, settings=settings, nstep=2e4, skip=20)
+  bay.mean <- as.Date(sapply(res$pred.dates, function(x) mean(x$int.date)),
+                      origin="1970-01-01")
   bay.mean <- interval(as.Date("2000-01-01"), bay.mean) / months(1)
   results$bayroot[i] <- sqrt(mean((bay.mean - true.vals)^2))  
 }
