@@ -18,6 +18,7 @@ rooted <- rtt(phy, as.integer(tip.dates))
 div <- node.depth.edgelength(rooted)[1:Ntip(rooted)]
 plot(tip.dates, div); abline(lm(div ~ tip.dates))
 ```
+<img src="https://user-images.githubusercontent.com/1109328/173941968-d2b5f464-8369-4746-90b0-a2ebd7b2c427.png" width="300px"/>
 
 ```R
 # now carry out Bayesian sampling
@@ -25,10 +26,12 @@ settings <- list(seq.len=987, format="%Y",
                  mindate=as.Date("1990-01-01"), maxdate=as.Date("2000-01-01"),
                  meanlog=-5, sdlog=2,
                  root.delta=0.01, date.sd=10, rate.delta=1e-3)
-params <- list(phy=rooted, rate=0.01, origin=as.Date("1995-01-01"))
+params <- list(phy=rooted, rate=0.01, origin=as.Date("1995-01-01"))  # takes about a minute
 res <- bayroot(nstep=1e4, params=params, settings=settings)
-plot(res, burnin=100)
+plot(res, burnin=100)  # calls a generic S3 method
 ```
+<img src="https://user-images.githubusercontent.com/1109328/173942067-934a648f-c112-480d-b684-135bba19d56c.png" width="500px"/>
+
 
 ## Dependencies
 
