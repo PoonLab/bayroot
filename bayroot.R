@@ -151,6 +151,25 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 #'                  and model parameters (origin, rate)
 #'                  {character} treelog, Newick serializations of rooted trees
 #'                  in chain sample.
+#' @example 
+#' phy <- read.tree("data/h3n2.nwk")
+#' 
+#' # first show root-to-tip regression using ape::rtt
+#' tip.dates <- get.dates(phy, format="%Y")
+#' rooted <- rtt(phy, as.integer(tip.dates))
+#' div <- node.depth.edgelength(rooted)[1:Ntip(rooted)]
+#' fit <- lm(div ~ tip.dates)
+#' plot(tip.dates, div)
+#' abline(fit)
+#' 
+#' # now carry out Bayesian sampling
+#' settings <- list(seq.len=987, format="%Y", 
+#'                  mindate=as.Date("1990-01-01"), maxdate=as.Date("2000-01-01"),
+#'                  meanlog=-5, sdlog=2,
+#'                  root.delta=0.01, date.sd=10, rate.delta=1e-3)
+#' params <- list(phy=rooted, rate=0.01, origin=as.Date("1995-01-01"))
+#' res <- bayroot(nstep=1e4, params=params, settings=settings)
+#' plot(res, burnin=100)
 #' @export
 bayroot <- function(nstep, params, settings, skip=10, echo=FALSE) {
   if (is.null(settings$format)) {
@@ -165,7 +184,7 @@ bayroot <- function(nstep, params, settings, skip=10, echo=FALSE) {
   lprior <- .prior(origin=params$origin, rate=params$rate, hyper=settings)
   lpost <- llk + lprior
   
-  tip.dates <- get.dates(params$phy)
+  tip.dates <- get.dates(params$phy, format=settings$format)
   # origin cannot be more recent than first sample date
   min.date <- min(tip.dates, na.rm=T)
   
