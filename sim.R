@@ -1,7 +1,7 @@
 require(twt, quietly=TRUE)
 
 setwd("~/git/bayroot/")
-prefix <- "latent1"
+prefix <- "latent2"
 model <- Model$new(yaml.load_file(paste0(prefix, '.yaml')))
 
 if (FALSE) {
@@ -71,7 +71,7 @@ fixed.sampl <- model$get.initial.conds()$originTime - model$get.fixed.samplings(
 names(fixed.sampl) <- gsub("__.+$", "", names(fixed.sampl))
 
 set.seed(1)
-for (i in 1:10) {
+for (i in 1:50) {
   print(i)
   outer <- sim.outer.tree(model)
   phy <- as.phylo(outer)
