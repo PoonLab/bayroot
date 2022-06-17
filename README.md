@@ -9,28 +9,38 @@ A more complex approach to this problem is to use Bayesian methods to sample tre
 
 ## Usage
 ```R
-# load example tree (51 influenza HA sequences from 2001-2006) from Russell et al. 2008)
+# load example tree (101 influenza HA sequences from 2001-2006) from Russell et al. 2008)
 phy <- read.tree("data/h3n2.nwk")
 
 # first show root-to-tip regression using ape::rtt
-tip.dates <- get.dates(phy, format="%Y")
+tip.dates <- get.dates(phy, format="%d-%b-%Y")
 rooted <- rtt(phy, as.integer(tip.dates))
 div <- node.depth.edgelength(rooted)[1:Ntip(rooted)]
-plot(tip.dates, div); abline(lm(div ~ tip.dates))
+plot(tip.dates, div, xlim=c(as.Date("1999-01-01"), max(tip.dates)), 
+     ylim=c(0, max(div)))
+abline(lm(div ~ tip.dates))
 ```
-<img src="https://user-images.githubusercontent.com/1109328/173941968-d2b5f464-8369-4746-90b0-a2ebd7b2c427.png" width="300px"/>
+<img src="https://user-images.githubusercontent.com/1109328/174401842-535dda29-2c62-42db-9cf0-de556dd9acd3.png" width="400px"/>
+
 
 ```R
-# now carry out Bayesian sampling
-settings <- list(seq.len=987, format="%Y", 
-                 mindate=as.Date("1990-01-01"), maxdate=as.Date("2000-01-01"),
+# now carry out Bayesian sampling, using the RTT tree to initialize the chain
+settings <- list(seq.len=987, format="%d-%b-%Y", 
+                 mindate=as.Date("1995-01-01"), maxdate=as.Date("2000-01-01"),
                  meanlog=-5, sdlog=2,
-                 root.delta=0.01, date.sd=10, rate.delta=1e-3)
-params <- list(phy=rooted, rate=0.01, origin=as.Date("1995-01-01"))  # takes about a minute
-res <- bayroot(nstep=1e4, params=params, settings=settings)
+                 root.delta=0.03, date.sd=60, rate.delta=0.002)
+params <- list(phy=rooted, rate=0.01, origin=as.Date("1995-01-01"))
+res <- bayroot(nstep=1e5, skip=100, params=params, settings=settings, echo=T)  # about 8 minutes
 plot(res, burnin=100)  # calls a generic S3 method
 ```
-<img src="https://user-images.githubusercontent.com/1109328/173942067-934a648f-c112-480d-b684-135bba19d56c.png" width="500px"/>
+<img src="https://user-images.githubusercontent.com/1109328/174401648-b6691a29-65fc-4104-9b37-a7e75dd1bf04.png" width="600px"/>
+
+
+```R
+# since we can't make a trace log of trees, bayroot provides a plotting option for viewing a specific step in the chain sample
+plot(res, settings, step=1000)
+```
+<img src="https://user-images.githubusercontent.com/1109328/174401959-6c7d857e-6189-4574-bb64-c6887f6978ba.png" width="600px"/>
 
 
 ## Dependencies
