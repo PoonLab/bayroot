@@ -42,6 +42,24 @@ plot(res, settings, step=1000)
 ```
 <img src="https://user-images.githubusercontent.com/1109328/174401959-6c7d857e-6189-4574-bb64-c6887f6978ba.png" width="600px"/>
 
+```R
+# another way of looking at the MCMC results
+plot(tip.dates, div, xlim=c(as.Date("1999-01-01"), max(tip.dates)), 
+      ylim=c(0, max(div)), type='n')
+abline(fit)
+for (i in seq(100, nrow(res$log), length.out=100)) {
+  row <- res$log[i,]
+  clock <- row$rate / settings$seq.len
+  segments(
+    x0=row$origin, x1=max(tip.dates), 
+    y0=0, y1=clock*as.integer(max(tip.dates)-row$origin),
+    col=rgb(0,0,1,0.2)
+  )
+}
+points(tip.dates, div, pch=21, cex=1, bg='white')
+```
+<img src="https://user-images.githubusercontent.com/1109328/174402219-072167a9-ee2d-4baa-938e-8214abf6db6d.png" width="400px"/>
+
 
 ## Dependencies
 
