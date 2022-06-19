@@ -155,20 +155,21 @@ get.dates <- function(phy, delimiter='_', pos=-1, format='%Y-%m-%d') {
 #' phy <- read.tree("data/h3n2.nwk")
 #' 
 #' # first show root-to-tip regression using ape::rtt
-#' tip.dates <- get.dates(phy, format="%Y")
+#' tip.dates <- get.dates(phy, format="%d-%b-%Y")
 #' rooted <- rtt(phy, as.integer(tip.dates))
 #' div <- node.depth.edgelength(rooted)[1:Ntip(rooted)]
 #' fit <- lm(div ~ tip.dates)
-#' plot(tip.dates, div)
+#' plot(tip.dates, div, xlim=c(as.Date("1999-01-01"), max(tip.dates)), 
+#'      ylim=c(0, max(div)))
 #' abline(fit)
 #' 
 #' # now carry out Bayesian sampling
-#' settings <- list(seq.len=987, format="%Y", 
-#'                  mindate=as.Date("1990-01-01"), maxdate=as.Date("2000-01-01"),
+#' settings <- list(seq.len=987, format="%d-%b-%Y", 
+#'                  mindate=as.Date("1996-01-01"), maxdate=as.Date("2000-01-01"),
 #'                  meanlog=-5, sdlog=2,
-#'                  root.delta=0.01, date.sd=10, rate.delta=1e-3)
+#'                  root.delta=0.03, date.sd=60, rate.delta=0.002)
 #' params <- list(phy=rooted, rate=0.01, origin=as.Date("1995-01-01"))
-#' res <- bayroot(nstep=1e4, params=params, settings=settings)
+#' res <- bayroot(nstep=1e5, skip=100, params=params, settings=settings, echo=T)
 #' plot(res, burnin=100)
 #' @export
 bayroot <- function(nstep, params, settings, skip=10, echo=FALSE) {
@@ -231,7 +232,7 @@ bayroot <- function(nstep, params, settings, skip=10, echo=FALSE) {
       log <- rbind(log, list(i, lpost, llk, lprior, params$origin, params$rate))
       treelog <- c(treelog, write.tree(params$phy))
       if (echo) {
-        message(i, lpost, llk, lprior, params$origin, params$rate)
+        message(paste(i, lpost, llk, lprior, params$origin, params$rate))
       }
     }
   }
@@ -271,7 +272,7 @@ plot.bayroot <- function(obj, settings, step=NA, burnin=1) {
   else{
     phy <- read.tree(text=obj$treelog[step])
     div <- node.depth.edgelength(phy)[1:Ntip(phy)] * settings$seq.len
-    tip.dates <- get.dates(phy)
+    tip.dates <- get.dates(phy, format=settings$format)
     origin <- obj$log$origin[step]
     rate <- obj$log$rate[step]
     
