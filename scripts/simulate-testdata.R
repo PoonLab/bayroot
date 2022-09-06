@@ -1,3 +1,6 @@
+# This script was used to simulate trees from a compartmental model
+# of the within-host dynamics of actively- and latently-infected cells
+
 require(twt, quietly=TRUE)
 
 setwd("~/git/bayroot/")
@@ -85,7 +88,7 @@ for (i in 1:50) {
   phy$tip.label <- paste(phy$tip.label, fixed.sampl[idx], sep="_")
   write.tree(phy, file=paste0("data/", prefix, ".", i, '.orig.nwk'))
   
-  # zero-out branch lengths for latent compartments
+  # zero-out branch lengths for latent compartments, for simulating evolution
   phy$edge.length[phy$from.type=='Latent'] <- 0
   write.tree(phy, file=paste0("data/", prefix, ".", i, '.cens.nwk'))
 }

@@ -8,6 +8,8 @@ Root-to-tip regression (RTT) makes use of the [molecular clock](https://en.wikip
 A more complex approach to this problem is to use Bayesian methods to sample trees from the posterior distribution defined by the sequences, sampling dates, model of evolution, and prior belief.  However, there are applications where a full Bayesian treatment may be difficult to compute, such as for large numbers of sequences, or when many sequences have unknown sampling dates to be estimated.  Therefore we developed `bayroot` to provide a solution that is intermediate between these two extremes.
 
 ## Usage
+
+### Fitting a root-to-tip regression
 ```R
 # load example tree (101 influenza HA sequences from 2001-2006) from Russell et al. 2008)
 phy <- read.tree("data/h3n2.nwk")
@@ -60,6 +62,16 @@ points(tip.dates, div, pch=21, cex=1, bg='white')
 ```
 <img src="https://user-images.githubusercontent.com/1109328/174402219-072167a9-ee2d-4baa-938e-8214abf6db6d.png" width="400px"/>
 
+### Estimating unknown tip dates
+
+```R
+require(ape)
+
+# 50 trees generated from a simulation of cell dynamics
+latent1 <- read.tree("data/testdata-latent1.nwk")
+
+
+```
 
 ## Dependencies
 

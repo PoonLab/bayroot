@@ -249,7 +249,11 @@ bayroot <- function(nstep, params, settings, skip=10, echo=FALSE) {
 #'                    plot traces of posterior and model parameters.
 #' @param burnin {int}: number of steps in chain sample to discard as burnin.
 #' @export
-plot.bayroot <- function(obj, settings, step=NA, burnin=1) {
+plot.bayroot <- function(obj, settings, step=NA, burnin=1, col=c('red', 'blue')) {
+  if (length(col) < 2) {
+    warning("Warning: plot.bayroot requires 2 colours, using default")
+    col <- c("red", "blue")
+  }
   if (is.na(step)) {
     orig.par <- par(mfrow=c(3,2))
     end <- nrow(obj$log)
@@ -279,7 +283,7 @@ plot.bayroot <- function(obj, settings, step=NA, burnin=1) {
     orig.par <- par(mfrow=c(1,2))
     plot(tree.layout(phy), mar=c(1,1,1,5), cex=0.5)
     par(mar=c(5,5,1,1))
-    plot(tip.dates, div, col=ifelse(grepl("_DNA_", phy$tip.label), 'red', 'black'),
+    plot(tip.dates, div, col=ifelse(grepl("_DNA_", phy$tip.label), col[1], col[2]),
          ylim=c(0, max(div)), xlab='Sample collection date', ylab='Divergence')
     segments(x0=origin, y0=0, x1=max(tip.dates), y1= rate * (max(tip.dates) - origin))
     par(orig.par)
@@ -381,7 +385,7 @@ predict.bayroot <- function(obj, settings, max.date=NA, burnin=10, thin=100) {
     step <- rows[i]
     
     # unpack state
-    origin <- obj$log$origin[step]
+    origin <- as.Date(obj$log$origin[step])
     rate <- obj$log$rate[step]
     phy <- read.tree(text=obj$treelog[step])
     
@@ -394,10 +398,10 @@ predict.bayroot <- function(obj, settings, max.date=NA, burnin=10, thin=100) {
     names(div) <- phy$tip.label
     
     idx <- which(is.element(labels, settings$censored))
-    samp <- sapply(idx, function(i) {
+    samp <- sapply(idx, function(j) {
       # in case censored tip sampled before last uncensored tip (max.date)
-      this.max.date <- min(max.date, dates[i])
-      .sample.pdfunc(div[i], rate, origin, this.max.date)
+      this.max.date <- min(max.date, dates[j])
+      .sample.pdfunc(div[j], rate, origin, this.max.date)
       })
     names(samp) <- labels[idx]
     
