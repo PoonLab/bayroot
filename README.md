@@ -7,6 +7,16 @@ Root-to-tip regression (RTT) makes use of the [molecular clock](https://en.wikip
 
 A more complex approach to this problem is to use Bayesian methods to sample trees from the posterior distribution defined by the sequences, sampling dates, model of evolution, and prior belief.  However, there are applications where a full Bayesian treatment may be difficult to compute, such as for large numbers of sequences, or when many sequences have unknown sampling dates to be estimated.  Therefore we developed `bayroot` to provide a solution that is intermediate between these two extremes.
 
+
+## Dependencies
+
+`bayroot` was developed in R version 3.6.2.  It requires the following packages:
+* [phytools](https://github.com/liamrevell/phytools) for the `reroot` function
+* [msm](https://cran.r-project.org/web/packages/msm/index.html) for the truncated normal distribution function (`rtnorm`)
+* [ggfree](https://github.com/ArtPoon/ggfree) for analyzing and plotting trees
+* [twt](https://github.com/PoonLab/twt) (*optional*, for simulating test data)
+
+
 ## Usage
 
 ### Fitting a root-to-tip regression
@@ -178,14 +188,6 @@ legend(x=1, y=0.035, legend=c("RTT", "bayroot", "true date"), cex=0.8,
 ```
 <img src="https://user-images.githubusercontent.com/1109328/188785869-ffed8d02-54d8-40a3-90f5-85a61faebe92.png" width="500px"/>
 Note the open circles represent RNA sequences used to calibrate the molecular clock.
-
-## Dependencies
-
-`bayroot` was developed in R version 3.6.2.  It requires the following packages:
-* [phytools](https://github.com/liamrevell/phytools) for the `reroot` function
-* [msm](https://cran.r-project.org/web/packages/msm/index.html) for the truncated normal distribution function (`rtnorm`)
-* [ggfree](https://github.com/ArtPoon/ggfree) for analyzing and plotting trees
-* [twt](https://github.com/PoonLab/twt) (*optional*, for simulating test data)
 
 
 ### References
