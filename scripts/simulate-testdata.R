@@ -93,3 +93,16 @@ for (i in 1:50) {
   write.tree(phy, file=paste0("data/", prefix, ".", i, '.cens.nwk'))
 }
 
+
+# generate a collated CSV
+files <- Sys.glob("data/latent2.*.times.csv")
+int.times <- {}
+for (f in files) {
+  # ordering should be the same as testdata-latent1.nwk
+  temp <- read.csv(f)
+  index <- gsub("data/latent[12]\\.([0-9]+)\\.times\\.csv", "\\1", f)
+  temp$rep <- index
+  names(temp) <- c("sample", "int.time", "rep")
+  int.times <- rbind(int.times, temp)
+}
+write.csv(int.times, file="data/latent2.int-times.csv", row.names=F, quote=F)

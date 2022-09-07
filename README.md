@@ -64,14 +64,69 @@ points(tip.dates, div, pch=21, cex=1, bg='white')
 
 ### Estimating unknown tip dates
 
+*bayroot* was actually developed for our study of the latent HIV reservoir.  HIV converts its RNA genome into DNA and then integrates that DNA into the host genome.  In a small number of host cells, that HIV DNA can remain dormant for years until the cell becomes "reactivated" and starts to produce new virus copies.  We are interested in reconstructing *when* copies of HIV in this latent reservoir became integrated.
+
+Since the HIV DNA basically stops evolving upon integration, this problem is equivalent to imputing missing dates on some tips of a time-scaled tree.  A Bayesian approach is well-suited to this problem!  We implemented a compartmental model in the R package [twt](https://github.com/PoonLab/twt) to simulate trees relating a mixture of actively evolving HIV RNA and integrated HIV DNA.  Let's reconstruct the integration dates for one of these simulations.
+
+First, we'll load the *bayroot* functions and a couple of packages, and then import the simulated data:
 ```R
+source("bayroot.R")
 require(ape)
+require(lubridate)
 
 # 50 trees generated from a simulation of cell dynamics
 latent1 <- read.tree("data/testdata-latent1.nwk")
-
-
+int.times <- read.csv("data/testdata-latent1.csv")
 ```
+
+Next, we'll extract the first tree and the actual integration dates, and configure our analysis:
+```R
+phy <- latent1[[1]]  # extract the first replicate
+int.times <- int.times[int.times$rep=='1',]
+
+settings <- list(
+  seq.len=1233,  # AY772699
+  format="%Y-%m-%d",
+  # we arbitrarily assigned 2000-01-01 as the actual origin date
+  mindate=as.Date("1999-12-01"),  # one month before origin
+  maxdate=as.Date("2000-04-01"),  # first sample is 3 months after origin
+  meanlog=-5, sdlog=2,  # hyperparameters for lognormal prior on rate
+  root.delta=0.01,  # proposal on root location
+  date.sd=10,  # days, origin proposal
+  rate.delta=0.01,  # proposal on clock rate
+  censored = phy$tip.label[grepl("^Latent", phy$tip.label)]
+)
+```
+
+Next, we're going to convert the sampling times in the tip labels into dates, and identify which tip dates need to be imputed:
+```R
+tip.dates <- sapply(phy$tip.label, function(x) as.integer(strsplit(x, "_")[[1]][3]))
+tip.dates <- as.Date("2000-01-01") + months(tip.dates)
+phy$tip.label <- paste(phy$tip.label, tip.dates, sep="_")
+
+# if tip was sampled from latent compartment, censor sample date
+censored <- as.Date(ifelse(grepl("Active", phy$tip.label), tip.dates, NA), 
+                      origin='1970-01-01')
+```
+
+Finally, we'll initialize the model parameters, and then run a chain sample for 20,000 steps, only keeping every 20th step.  I've set `echo=TRUE` to display these samples (this will take a couple of minutes):
+```R
+# initial model parameters
+params <- list(
+  phy=reroot(phy, which.min(censored)),  # initially root on earliest tip
+  rate=0.1,  # initial clock rate
+  origin=min(censored, na.rm=T)-1  # initial date at the root
+  )
+set.seed(1)
+chain <- bayroot(nstep=2e4, skip=20, params=params, settings=settings, echo=T)
+```
+
+If we call the generic `plot` method, R will display a composite set of plots summarizing the posterior traces of our chain sample.  We'll discard the first 2,000 steps as burnin:
+```R
+plot(chain, burnin=100)
+```
+
+
 
 ## Dependencies
 
