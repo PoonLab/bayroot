@@ -121,11 +121,47 @@ set.seed(1)
 chain <- bayroot(nstep=2e4, skip=20, params=params, settings=settings, echo=T)
 ```
 
-If we call the generic `plot` method, R will display a composite set of plots summarizing the posterior traces of our chain sample.  We'll discard the first 2,000 steps as burnin:
+If we call the generic `plot` method on the object returned by `bayroot()`, R will display a composite set of plots summarizing the posterior traces of our chain sample.  We'll discard the first 2,000 steps as burnin:
 ```R
 plot(chain, burnin=100)
 ```
+<img src="https://user-images.githubusercontent.com/1109328/188780713-72137dc0-7c98-4e63-ab64-720191234ac1.png" width="600px"/>
 
+Now we use this posterior sample to simulate integration dates for each of the censored tips.  Note that for this simulation, we assumed that ART was initiated exactly 11 months post-infection, so we have to pass this information to the `max.date` argument:
+```R
+pred.dates <- predict(chain, settings, max.date=as.Date("2000-11-01), burnin=100, thin=200)
+```
+
+This function returns a list of data frames for each censored tip:
+```R
+> summary(pred.dates)
+                            Length Class      Mode
+Latentcomp_5_20_2001-09-01  2      data.frame list
+Latentcomp_7_20_2001-09-01  2      data.frame list
+Latentcomp_3_20_2001-09-01  2      data.frame list
+Latentcomp_10_20_2001-09-01 2      data.frame list
+Latentcomp_4_20_2001-09-01  2      data.frame list
+Latentcomp_2_20_2001-09-01  2      data.frame list
+Latentcomp_8_20_2001-09-01  2      data.frame list
+Latentcomp_6_20_2001-09-01  2      data.frame list
+Latentcomp_1_20_2001-09-01  2      data.frame list
+Latentcomp_9_20_2001-09-01  2      data.frame list
+> summary(pred.dates[[1]])
+    int.date          div       
+ Min.   :11056   Min.   :36.94  
+ 1st Qu.:11088   1st Qu.:40.13  
+ Median :11104   Median :41.29  
+ Mean   :11106   Mean   :41.10  
+ 3rd Qu.:11121   3rd Qu.:42.19  
+ Max.   :11169   Max.   :44.45
+```
+
+Here I'm converting these `int.date` samples from the posterior distribution back to the simulation time units, relative to the start of infection, and then displaying them as box-and-whisker plots:
+```R
+temp <- sapply(pred.dates, function(x) interval(as.Date("2000-01-01"), as.Date(x$int.date, origin="1970-01-01")) / months(1))
+par(mar=c(5,10,1,1))
+boxplot(temp, horizontal=T, las=1, cex.axis=0.7, xlab="Integration dates (time units post infection")
+```
 
 
 ## Dependencies
