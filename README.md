@@ -121,12 +121,63 @@ set.seed(1)
 chain <- bayroot(nstep=2e4, skip=20, params=params, settings=settings, echo=T)
 ```
 
-If we call the generic `plot` method, R will display a composite set of plots summarizing the posterior traces of our chain sample.  We'll discard the first 2,000 steps as burnin:
+If we call the generic `plot` method on the object returned by `bayroot()`, R will display a composite set of plots summarizing the posterior traces of our chain sample.  We'll discard the first 2,000 steps as burnin:
 ```R
 plot(chain, burnin=100)
 ```
+<img src="https://user-images.githubusercontent.com/1109328/188780713-72137dc0-7c98-4e63-ab64-720191234ac1.png" width="600px"/>
 
+Now we use this posterior sample to simulate integration dates for each of the censored tips.  Note that for this simulation, we assumed that ART was initiated exactly 11 months post-infection, so we have to pass this information to the `max.date` argument:
+```R
+pred.dates <- predict(chain, settings, max.date=as.Date("2000-11-01), burnin=100, thin=200)
+```
 
+This function returns a list of data frames for each censored tip:
+```R
+> summary(pred.dates)
+                            Length Class      Mode
+Latentcomp_5_20_2001-09-01  2      data.frame list
+Latentcomp_7_20_2001-09-01  2      data.frame list
+Latentcomp_3_20_2001-09-01  2      data.frame list
+Latentcomp_10_20_2001-09-01 2      data.frame list
+Latentcomp_4_20_2001-09-01  2      data.frame list
+Latentcomp_2_20_2001-09-01  2      data.frame list
+Latentcomp_8_20_2001-09-01  2      data.frame list
+Latentcomp_6_20_2001-09-01  2      data.frame list
+Latentcomp_1_20_2001-09-01  2      data.frame list
+Latentcomp_9_20_2001-09-01  2      data.frame list
+> summary(pred.dates[[1]])
+    int.date          div       
+ Min.   :11056   Min.   :36.94  
+ 1st Qu.:11088   1st Qu.:40.13  
+ Median :11104   Median :41.29  
+ Mean   :11106   Mean   :41.10  
+ 3rd Qu.:11121   3rd Qu.:42.19  
+ Max.   :11169   Max.   :44.45
+```
+
+Let's compare these estimates to standard root-to-tip regression using a couple of utility functions that we've provided in `scripts/validate.R`:
+```R
+source("validate.R")
+rt <- root2tip(phy)
+get.true.values.1(rt, int.times)
+est <- get.estimates.1(pred.dates, rt)
+```
+
+and generate a plot summarizing this comparison:
+```R
+par(mar=c(5,5,1,1))
+plot(rt, true.vals=true.vals, xlab="Collection date (months since origin)",
+     ylab="Divergence", xlim=c(0, 20), ylim=c(0, max(rt$div)),
+     las=1, cex.axis=0.8)
+points(est$est, est$div, pch=19, col=rgb(0,0,1,0.5), cex=0.8)
+segments(x0=est$lo95, x1=est$hi95, y0=est$div, col=rgb(0,0,1,0.3), lwd=5)
+abline(v=10, lty=2)
+legend(x=1, y=0.035, legend=c("RTT", "bayroot", "true date"), cex=0.8,
+       col=c('red', 'blue', 'black'), pch=c(19, 19, 3), pt.lwd=2, bty='n')
+```
+<img src="https://user-images.githubusercontent.com/1109328/188785869-ffed8d02-54d8-40a3-90f5-85a61faebe92.png" width="500px"/>
+Note the open circles represent RNA sequences used to calibrate the molecular clock.
 
 ## Dependencies
 
