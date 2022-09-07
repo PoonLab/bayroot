@@ -156,13 +156,28 @@ Latentcomp_9_20_2001-09-01  2      data.frame list
  Max.   :11169   Max.   :44.45
 ```
 
-Here I'm converting these `int.date` samples from the posterior distribution back to the simulation time units, relative to the start of infection, and then displaying them as box-and-whisker plots:
+Let's compare these estimates to standard root-to-tip regression using a couple of utility functions that we've provided in `scripts/validate.R`:
 ```R
-temp <- sapply(pred.dates, function(x) interval(as.Date("2000-01-01"), as.Date(x$int.date, origin="1970-01-01")) / months(1))
-par(mar=c(5,10,1,1))
-boxplot(temp, horizontal=T, las=1, cex.axis=0.7, xlab="Integration dates (time units post infection")
+source("validate.R")
+rt <- root2tip(phy)
+get.true.values.1(rt, int.times)
+est <- get.estimates.1(pred.dates, rt)
 ```
 
+and generate a plot summarizing this comparison:
+```R
+par(mar=c(5,5,1,1))
+plot(rt, true.vals=true.vals, xlab="Collection date (months since origin)",
+     ylab="Divergence", xlim=c(0, 20), ylim=c(0, max(rt$div)),
+     las=1, cex.axis=0.8)
+points(est$est, est$div, pch=19, col=rgb(0,0,1,0.5), cex=0.8)
+segments(x0=est$lo95, x1=est$hi95, y0=est$div, col=rgb(0,0,1,0.3), lwd=5)
+abline(v=10, lty=2)
+legend(x=1, y=0.035, legend=c("RTT", "bayroot", "true date"), cex=0.8,
+       col=c('red', 'blue', 'black'), pch=c(19, 19, 3), pt.lwd=2, bty='n')
+```
+<img src="https://user-images.githubusercontent.com/1109328/188785869-ffed8d02-54d8-40a3-90f5-85a61faebe92.png" width="500px"/>
+Note the open circles represent RNA sequences used to calibrate the molecular clock.
 
 ## Dependencies
 
