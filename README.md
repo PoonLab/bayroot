@@ -14,6 +14,7 @@ A more complex approach to this problem is to use Bayesian methods to sample tre
 * [phytools](https://github.com/liamrevell/phytools) for the `reroot` function
 * [msm](https://cran.r-project.org/web/packages/msm/index.html) for the truncated normal distribution function (`rtnorm`)
 * [ggfree](https://github.com/ArtPoon/ggfree) for analyzing and plotting trees
+* [chemCal](https://cran.r-project.org/web/packages/chemCal/index.html) for `inverse.predict` function
 * [twt](https://github.com/PoonLab/twt) (*optional*, for simulating test data)
 
 
@@ -86,16 +87,18 @@ require(ape)
 require(lubridate)
 
 # 50 trees generated from a simulation of cell dynamics
-latent1 <- read.tree("data/testdata-latent1.nwk")
-int.times <- read.csv("data/testdata-latent1.csv")
+trees <- read.tree("data/testdata-latent2.nwk")
+times <- read.csv("data/testdata-latent2.csv")
 
-# export first replicate to new files
-tf <- "data/test1.nwk"
-cf <- "data/test1.csv"
-write.tree(latent1[[1]], file=tf)
-temp <- int.times$int.time[int.times$rep==1]
-names(temp) <- int.times$sample[int.times$rep==1]
-write.csv(temp, file=cf)
+# export one of the replicates to new files
+rep <- 1
+tf <- "data/example.nwk"
+write.tree(trees[[rep]], file=tf)
+
+cf <- "data/example.csv"
+int.times <- times$int.time[times$rep==rep]
+names(int.times) <- times$sample[times$rep==rep]
+write.csv(as.data.frame(int.times), file=cf)
 ```
 
 Next, we'll configure our analysis:
@@ -106,7 +109,7 @@ settings <- list(
   format="%Y-%m-%d",
   # we arbitrarily assigned 2000-01-01 as the actual origin date
   mindate=as.Date("1999-12-01"),  # one month before origin
-  maxdate=as.Date("2000-04-01"),  # first sample is 3 months after origin
+  maxdate=as.Date("2000-02-01"),  # one month after origin
   meanlog=-5, sdlog=2,  # hyperparameters for lognormal prior on rate
   root.delta=0.01,  # proposal on root location
   date.sd=10,  # days, origin proposal
@@ -119,10 +122,15 @@ This utility function will initialize the model parameters and then run a chain 
 If you want to see the chain being updated in real time, you can add an argument `echo=TRUE` - note this will generate a lot of console output!
 Otherwise just wait a couple of minutes for the chain sample to complete.
 ```R
-> source("scripts/validate.R")
-Loading required package: chemCal
-> set.seed(1)  # make this reproducible
-> res <- fit.bayroot(tf, cf, settings=settings, nstep=2e4, skip=20)
+source("scripts/validate.R")  # loads package chemCal
+set.seed(1)  # make this reproducible
+res <- fit.bayroot(tf, cf, settings=settings, nstep=2e4, skip=20, 
+                   max.date=as.Date("2001-04-01"))
+```
+Note we set the maximum integration date to the above date because ART was initiated 15 months post-infection in this set of simulations.
+
+Here I'm displaying the contents of the list returned from `fit.bayroot`:
+```
 > summary(res)
            Length Class   Mode   
 phy         5     phylo   list   
@@ -131,7 +139,6 @@ tip.dates  40     Date    numeric
 censored   40     Date    numeric
 chain       2     bayroot list   
 ```
-Here I'm displaying the contents of the list returned from `fit.bayroot`:
 * `phy` is just the original tree
 * `pred.dates` is a list containing data frames of integration date estimates for every censored tip
 * `tip.dates` is a vector of sampling times associated with each tip as Date objects, including censored tips
@@ -142,58 +149,28 @@ If we call the generic `plot` method on the `bayroot` object, R will display a c
 ```R
 plot(res$chain, burnin=100)
 ```
+<img src="https://user-images.githubusercontent.com/1109328/189016258-186c1117-5821-450e-ab12-e0f9cf98cf19.png" width="600px"/>
 
 
-Now we use this posterior sample to simulate integration dates for each of the censored tips.  Note that for this simulation, we assumed that ART was initiated exactly 11 months post-infection, so we have to pass this information to the `max.date` argument:
+Let's compare our posterior sample of integration dates to standard root-to-tip regression using a couple of utility functions that we've provided in `scripts/validate.R`:
 ```R
-pred.dates <- predict(chain, settings, max.date=as.Date("2000-11-01), burnin=100, thin=200)
-```
-
-This function returns a list of data frames for each censored tip:
-```R
-> summary(pred.dates)
-                            Length Class      Mode
-Latentcomp_5_20_2001-09-01  2      data.frame list
-Latentcomp_7_20_2001-09-01  2      data.frame list
-Latentcomp_3_20_2001-09-01  2      data.frame list
-Latentcomp_10_20_2001-09-01 2      data.frame list
-Latentcomp_4_20_2001-09-01  2      data.frame list
-Latentcomp_2_20_2001-09-01  2      data.frame list
-Latentcomp_8_20_2001-09-01  2      data.frame list
-Latentcomp_6_20_2001-09-01  2      data.frame list
-Latentcomp_1_20_2001-09-01  2      data.frame list
-Latentcomp_9_20_2001-09-01  2      data.frame list
-> summary(pred.dates[[1]])
-    int.date          div       
- Min.   :11056   Min.   :36.94  
- 1st Qu.:11088   1st Qu.:40.13  
- Median :11104   Median :41.29  
- Mean   :11106   Mean   :41.10  
- 3rd Qu.:11121   3rd Qu.:42.19  
- Max.   :11169   Max.   :44.45
-```
-
-Let's compare these estimates to standard root-to-tip regression using a couple of utility functions that we've provided in `scripts/validate.R`:
-```R
-source("validate.R")
 rt <- root2tip(phy)
-get.true.values.1(rt, int.times)
-est <- get.estimates.1(pred.dates, rt)
+true.vals <- get.true.values(rt, cf)
+est <- get.estimates(res, rt)
 ```
-
 and generate a plot summarizing this comparison:
 ```R
 par(mar=c(5,5,1,1))
-plot(rt, true.vals=true.vals, xlab="Collection date (months since origin)",
+plot(rt, true.vals=true.vals, xlab="Time since infection",
      ylab="Divergence", xlim=c(0, 20), ylim=c(0, max(rt$div)),
      las=1, cex.axis=0.8)
 points(est$est, est$div, pch=19, col=rgb(0,0,1,0.5), cex=0.8)
 segments(x0=est$lo95, x1=est$hi95, y0=est$div, col=rgb(0,0,1,0.3), lwd=5)
-abline(v=10, lty=2)
-legend(x=1, y=0.035, legend=c("RTT", "bayroot", "true date"), cex=0.8,
+abline(v=15, lty=2)
+legend(x=0, y=0.035, legend=c("RTT", "bayroot", "true date"), cex=0.8,
        col=c('red', 'blue', 'black'), pch=c(19, 19, 3), pt.lwd=2, bty='n')
 ```
-<img src="https://user-images.githubusercontent.com/1109328/188785869-ffed8d02-54d8-40a3-90f5-85a61faebe92.png" width="500px"/>
+<img src="https://user-images.githubusercontent.com/1109328/189016331-01a1bfa8-c086-4b86-a455-60f1ad13aa11.png" width="500px"/>
 Note the open circles represent RNA sequences used to calibrate the molecular clock.
 
 
