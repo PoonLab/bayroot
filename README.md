@@ -78,7 +78,8 @@ points(tip.dates, div, pch=21, cex=1, bg='white')
 
 Since the HIV DNA basically stops evolving upon integration, this problem is equivalent to imputing missing dates on some tips of a time-scaled tree.  A Bayesian approach is well-suited to this problem!  We implemented a compartmental model in the R package [twt](https://github.com/PoonLab/twt) to simulate trees relating a mixture of actively evolving HIV RNA and integrated HIV DNA.  Let's reconstruct the integration dates for one of these simulations.
 
-First, we'll load the *bayroot* functions and a couple of packages, and then import the simulated data:
+First, we'll load the *bayroot* functions and a couple of packages, and then import the simulated data.
+We wrote some utility functions that were designed to operate on files containing only one tree and integration times for one replicate, but we didn't want to upload hundreds of these files to the repository.  Instead we're going to extract one replicate and generate the expected file formats:
 ```R
 source("bayroot.R")
 require(ape)
@@ -87,13 +88,19 @@ require(lubridate)
 # 50 trees generated from a simulation of cell dynamics
 latent1 <- read.tree("data/testdata-latent1.nwk")
 int.times <- read.csv("data/testdata-latent1.csv")
+
+# export first replicate to new files
+tf <- "data/test1.nwk"
+cf <- "data/test1.csv"
+write.tree(latent1[[1]], file=tf)
+temp <- int.times$int.time[int.times$rep==1]
+names(temp) <- int.times$sample[int.times$rep==1]
+write.csv(temp, file=cf)
 ```
 
-Next, we'll extract the first tree and the actual integration dates, and configure our analysis:
+Next, we'll configure our analysis:
 ```R
-phy <- latent1[[1]]  # extract the first replicate
-int.times <- int.times[int.times$rep=='1',]
-
+phy <- read.tree(tf)
 settings <- list(
   seq.len=1233,  # AY772699
   format="%Y-%m-%d",
@@ -108,34 +115,34 @@ settings <- list(
 )
 ```
 
-Next, we're going to convert the sampling times in the tip labels into dates, and identify which tip dates need to be imputed:
+This utility function will initialize the model parameters and then run a chain sample for 20,000 steps, only keeping every 20th step.
+If you want to see the chain being updated in real time, you can add an argument `echo=TRUE` - note this will generate a lot of console output!
+Otherwise just wait a couple of minutes for the chain sample to complete.
 ```R
-tip.dates <- sapply(phy$tip.label, function(x) as.integer(strsplit(x, "_")[[1]][3]))
-tip.dates <- as.Date("2000-01-01") + months(tip.dates)
-phy$tip.label <- paste(phy$tip.label, tip.dates, sep="_")
+> source("scripts/validate.R")
+Loading required package: chemCal
+> set.seed(1)  # make this reproducible
+> res <- fit.bayroot(tf, cf, settings=settings, nstep=2e4, skip=20)
+> summary(res)
+           Length Class   Mode   
+phy         5     phylo   list   
+pred.dates 10     -none-  list   
+tip.dates  40     Date    numeric
+censored   40     Date    numeric
+chain       2     bayroot list   
+```
+Here I'm displaying the contents of the list returned from `fit.bayroot`:
+* `phy` is just the original tree
+* `pred.dates` is a list containing data frames of integration date estimates for every censored tip
+* `tip.dates` is a vector of sampling times associated with each tip as Date objects, including censored tips
+* `censored` replaces Date values in `tip.dates` with missing values (`NA`) for censored tips
+* `chain` is a custom [S3](http://adv-r.had.co.nz/S3.html) object of class `bayroot` that contains our chain samples of model parameters and rooted trees from the posterior distribution
 
-# if tip was sampled from latent compartment, censor sample date
-censored <- as.Date(ifelse(grepl("Active", phy$tip.label), tip.dates, NA), 
-                      origin='1970-01-01')
+If we call the generic `plot` method on the `bayroot` object, R will display a composite set of plots summarizing the posterior traces of our chain sample.  We'll discard the first 2,000 steps as burnin:
+```R
+plot(res$chain, burnin=100)
 ```
 
-Finally, we'll initialize the model parameters, and then run a chain sample for 20,000 steps, only keeping every 20th step.  I've set `echo=TRUE` to display these samples (this will take a couple of minutes):
-```R
-# initial model parameters
-params <- list(
-  phy=reroot(phy, which.min(censored)),  # initially root on earliest tip
-  rate=0.1,  # initial clock rate
-  origin=min(censored, na.rm=T)-1  # initial date at the root
-  )
-set.seed(1)
-chain <- bayroot(nstep=2e4, skip=20, params=params, settings=settings, echo=T)
-```
-
-If we call the generic `plot` method on the object returned by `bayroot()`, R will display a composite set of plots summarizing the posterior traces of our chain sample.  We'll discard the first 2,000 steps as burnin:
-```R
-plot(chain, burnin=100)
-```
-<img src="https://user-images.githubusercontent.com/1109328/188780713-72137dc0-7c98-4e63-ab64-720191234ac1.png" width="600px"/>
 
 Now we use this posterior sample to simulate integration dates for each of the censored tips.  Note that for this simulation, we assumed that ART was initiated exactly 11 months post-infection, so we have to pass this information to the `max.date` argument:
 ```R
