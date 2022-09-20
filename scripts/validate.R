@@ -54,18 +54,6 @@ get.true.values <- function(obj, csvfile) {
   true.dates[idx]
 }
 
-get.true.values.1 <- function(obj, int.times) {
-  if (class(obj) != "root2tip") {
-    stop("ERROR: expecting obj of class 'root2tip'")
-  }
-  idx <- match(int.times$sample, 
-               gsub("^(.+)_[0-9]+$", "\\1", names(obj$tip.dates)))
-  true.dates <- obj$tip.dates[idx] - int.times$int.time
-  idx <- match(names(obj$pred), names(true.dates))
-  true.dates[idx]
-}
-
-
 
 plot.root2tip <- function(obj, true.vals, col='red', ...) {
   plot.default(obj$tip.dates, obj$div, 
@@ -93,7 +81,7 @@ plot.root2tip <- function(obj, true.vals, col='red', ...) {
 fit.bayroot <- function(treefile, csvfile, settings,
                         max.date=as.Date("2000-11-01"),  # ART at 10 mo
                         #max.date=as.Date("2001-04-01"),
-                        nstep=1e4, skip=10) {
+                        nstep=1e4, skip=10, echo=F) {
   phy <- read.tree(treefile)
   
   # modify tip labels so they can be parsed as dates
@@ -110,7 +98,7 @@ fit.bayroot <- function(treefile, csvfile, settings,
   params <- list(phy=phy, rate=0.1, origin=min(censored, na.rm=T)-1)
   
   # 1000 samples
-  chain <- bayroot(nstep=nstep, skip=skip, params=params, settings=settings)
+  chain <- bayroot(nstep=nstep, skip=skip, params=params, settings=settings, echo=echo)
   
   # 200 samples
   pred.dates <- predict(chain, settings, max.date=max.date, 
@@ -167,33 +155,6 @@ get.estimates <- function(obj, rt) {
     names(rt$div)
     )
   
-  data.frame(est=est[,2], lo95=est[,1], hi95=est[,3], div=rt$div[idx])
-}
-
-get.estimates <- function(obj, rt) {
-  x <- sapply(obj$pred.dates, function(x) 
-    quantile(x$int.date, c(0.025, 0.5, 0.975)))
-  est <- apply(x, 1, dt2months)
-  row.names(est) <- names(obj$pred.dates)
-  
-  # match to rt results
-  idx <- match(
-    gsub("^(.+)_[0-9]+-[0-9]+-[0-9]+$", "\\1", names(obj$pred.dates)),
-    names(rt$div)
-  )
-  
-  data.frame(est=est[,2], lo95=est[,1], hi95=est[,3], div=rt$div[idx])
-}
-
-get.estimates.1 <- function(pred.dates, rt) {
-  x <- sapply(pred.dates, function(x) 
-    quantile(x$int.date, c(0.025, 0.5, 0.975)))
-  est <- apply(x, 1, dt2months)
-  row.names(est) <- names(pred.dates)
-  idx <- match(
-    gsub("^(.+)_[0-9]+-[0-9]+-[0-9]+$", "\\1", names(pred.dates)),
-    names(rt$div)
-  )
   data.frame(est=est[,2], lo95=est[,1], hi95=est[,3], div=rt$div[idx])
 }
 

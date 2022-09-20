@@ -1,7 +1,7 @@
-source("validate.R")
+source("scripts/validate.R")
 
 # MAIN ROUTINE
-files <- Sys.glob("data/latent2.*.ft2.nwk")
+files <- Sys.glob("data/latent1.*.ft2.nwk")
 
 settings <- list(
   seq.len=1233,  # AY772699
