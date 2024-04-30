@@ -1,3 +1,6 @@
+# This script was used to simulate trees from a compartmental model
+# of the within-host dynamics of actively- and latently-infected cells
+
 require(twt, quietly=TRUE)
 
 setwd("~/git/bayroot/")
@@ -85,8 +88,21 @@ for (i in 1:50) {
   phy$tip.label <- paste(phy$tip.label, fixed.sampl[idx], sep="_")
   write.tree(phy, file=paste0("data/", prefix, ".", i, '.orig.nwk'))
   
-  # zero-out branch lengths for latent compartments
+  # zero-out branch lengths for latent compartments, for simulating evolution
   phy$edge.length[phy$from.type=='Latent'] <- 0
   write.tree(phy, file=paste0("data/", prefix, ".", i, '.cens.nwk'))
 }
 
+
+# generate a collated CSV
+files <- Sys.glob("data/latent2.*.times.csv")
+int.times <- {}
+for (f in files) {
+  # ordering should be the same as testdata-latent1.nwk
+  temp <- read.csv(f)
+  index <- gsub("data/latent[12]\\.([0-9]+)\\.times\\.csv", "\\1", f)
+  temp$rep <- index
+  names(temp) <- c("sample", "int.time", "rep")
+  int.times <- rbind(int.times, temp)
+}
+write.csv(int.times, file="data/latent2.int-times.csv", row.names=F, quote=F)

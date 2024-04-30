@@ -1,5 +1,7 @@
-# apply ML root-to-tip regression to simulated data
-# 
+# This script contains functions that we used to validate bayroot 
+# on trees simulated from a compartmental model of cellular dynamics
+# in the R package twt (see scripts/simulate-testdata.R)
+
 require(chemCal)  # for inverse.predict
 require(ape)
 setwd("~/git/bayroot")
@@ -7,6 +9,7 @@ source("bayroot.R")
 require(lubridate)
 
 #' Fit root-to-tip regression to tree
+#' @param phy:  an object of class 'phylo' (ape)
 root2tip <- function(phy) {
   phy <- multi2di(phy)
   
@@ -32,6 +35,10 @@ root2tip <- function(phy) {
 }
 
 
+#' Retrieve integration dates by matching tip labels in the tree to the 
+#' CSV file
+#' @param obj:  object of class 'root2tip'
+#' @param csvfile:  path to CSV file containing actual integration dates
 get.true.values <- function(obj, csvfile) {
   if (class(obj) != "root2tip") {
     stop("ERROR: expecting obj of class 'root2tip'")
@@ -40,49 +47,37 @@ get.true.values <- function(obj, csvfile) {
   int.times <- read.csv(csvfile, row.names=1)
   idx <- match(row.names(int.times), 
                gsub("^(.+)_[0-9]+$", "\\1", names(obj$tip.dates)))
-  
   true.dates <- obj$tip.dates[idx] - int.times$int.times
+  
+  # re-order the true values to match tip labels in the root2tip object
   idx <- match(names(obj$pred), names(true.dates))
   true.dates[idx]
 }
 
 
-plot.root2tip <- function(obj, true.vals, ...) {
+plot.root2tip <- function(obj, true.vals, col='red', ...) {
   plot.default(obj$tip.dates, obj$div, 
-       col=ifelse(is.na(obj$censored), 'red', 'black'), ...)
+       col=ifelse(is.na(obj$censored), col, 'black'), ...)
   
   abline(obj$fit)
-  red <- rgb(1,0,0,0.5)
+  col.alpha <- add.alpha(col, 0.5)
   x <- obj$pred
   y <- obj$div[is.na(obj$censored)]
   
-  points(x, y, col=red, pch=19, cex=0.8)
+  points(x, y, col=col, pch=19, cex=0.8)
   
   segments(x0=obj$pred, x1=obj$tip.dates[is.na(obj$censored)], 
-           y0=y, col=red)
+           y0=y, col=col.alpha)
   # show true dates
   points(true.vals, y, pch=3, cex=0.8, lwd=2)  
 }
 
 
-settings <- list(
-  seq.len=1233,  # AY772699
-  format="%Y-%m-%d",
-  
-  # hyperparameters
-  mindate=as.Date("1999-12-01"), 
-  maxdate=as.Date("2000-04-01"),  # first sample is 3 months after origin
-  #maxdate=as.Date("2000-12-01"),  # 11 mo after origin
-  
-  meanlog=-5, sdlog=2,  # rate
-  
-  # proposal parameters
-  root.delta=0.01, #2*mean(phy$edge.length),
-  date.sd=10,  # days, origin proposal
-  rate.delta=0.01
-)
-
-
+#' @param treefile: path to file containing Newick tree string
+#' @param csvfile: path to file with 
+#' @param settings:
+#' @param max.date: upper limit on predicted integration dates, usually
+#'                  the start of ART
 fit.bayroot <- function(treefile, csvfile, settings,
                         max.date=as.Date("2000-11-01"),  # ART at 10 mo
                         #max.date=as.Date("2001-04-01"),  # ART at 15 mo
@@ -102,13 +97,15 @@ fit.bayroot <- function(treefile, csvfile, settings,
   settings$censored <- phy$tip.label[grepl("^Latent", phy$tip.label)]
   params <- list(phy=phy, rate=0.1, origin=min(censored, na.rm=T)-1)
   
-  # 1000 samples
-  t0 <- Sys.time()
-  chain <- bayroot(nstep=nstep, skip=skip, params=params, settings=settings)
-  t1 <- Sys.time()
-  print(t1-t0)
-  
-  # 200 samplest0
+  ## how long to process 1000 samples?
+  # t0 <- Sys.time()  
+  # chain <- bayroot(nstep=nstep, skip=skip, params=params, settings=settings)
+  # t1 <- Sys.time()
+  # print(t1-t0)
+
+  chain <- bayroot(nstep=nstep, skip=skip, params=params, settings=settings, echo=echo)
+
+  # 200 samples
   pred.dates <- predict(chain, settings, max.date=max.date, 
                         burnin=pred.burnin, thin=pred.thin)
   
@@ -117,7 +114,9 @@ fit.bayroot <- function(treefile, csvfile, settings,
 }
 
 
-load.bayroot <- function(treefile, csvfile, settings, logfile, treelogfile) {
+#' Restore bayroot object from logfiles
+load.bayroot <- function(treefile, csvfile, settings, logfile, treelogfile,
+                         max.date=as.Date('2000-11-01')) {
   phy <- read.tree(treefile)
   
   # modify tip labels so they can be parsed as dates
@@ -134,7 +133,7 @@ load.bayroot <- function(treefile, csvfile, settings, logfile, treelogfile) {
   
   chain <- list()
   chain$log <- read.csv(logfile)
-  chain$treelog <- as.character(read.table(treelogfile, header=FALSE))
+  chain$treelog <- as.character(read.table(treelogfile, header=FALSE)$V1)
   class(chain) <- 'bayroot'
   pred.dates <- predict(chain, settings, max.date=max.date, burnin=100, thin=200)
   
@@ -146,11 +145,7 @@ load.bayroot <- function(treefile, csvfile, settings, logfile, treelogfile) {
 dt2months <- function(dt, refdate="2000-01-01") {
   interval(as.Date(refdate), as.Date(dt, origin="1970-01-01")) / months(1)
 }
-#plot(rt, true.vals, ylim=c(0, 0.12))
-#for (temp in res$pred.dates) {
-#  points(x=dt2months(temp$int.date), y=temp$div/settings$seq.len, pch=19, cex=0.5, 
-#         col=rgb(0,0,1,0.2))  
-#}
+
 
 # calculate means
 get.estimates <- function(obj, rt) {
@@ -168,6 +163,7 @@ get.estimates <- function(obj, rt) {
   data.frame(est=est[,2], lo95=est[,1], hi95=est[,3], div=rt$div[idx])
 }
 
+#' calculate error statistics
 rmse <- function(obj, true.vals) {
   sapply(1:length(true.vals), function(i) {
     pred <- dt2months(obj$pred.dates[[i]]$int.date)
@@ -176,7 +172,6 @@ rmse <- function(obj, true.vals) {
     bias <- (mean(pred)-true.vals)^2
   })
 }
-
 
 files <- Sys.glob("data/latent2.*.ft2.nwk")
 
@@ -267,4 +262,3 @@ par(family='Palatino', mar=c(4,4,1,1))
 slopegraph(results$rtt, results$bayroot, names.arg=c('RTT', 'bayroot'), 
            colorize=T, type='l', ylab="Root mean square error", shim=0)
 dev.off()
-
