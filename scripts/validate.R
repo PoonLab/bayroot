@@ -85,8 +85,8 @@ settings <- list(
 
 fit.bayroot <- function(treefile, csvfile, settings,
                         max.date=as.Date("2000-11-01"),  # ART at 10 mo
-                        #max.date=as.Date("2001-04-01"),
-                        nstep=1e4, skip=10) {
+                        #max.date=as.Date("2001-04-01"),  # ART at 15 mo
+                        nstep=1e4, skip=10, pred.burnin=100, pred.thin=200) {
   phy <- read.tree(treefile)
   
   # modify tip labels so they can be parsed as dates
@@ -103,11 +103,14 @@ fit.bayroot <- function(treefile, csvfile, settings,
   params <- list(phy=phy, rate=0.1, origin=min(censored, na.rm=T)-1)
   
   # 1000 samples
+  t0 <- Sys.time()
   chain <- bayroot(nstep=nstep, skip=skip, params=params, settings=settings)
+  t1 <- Sys.time()
+  print(t1-t0)
   
-  # 200 samples
+  # 200 samplest0
   pred.dates <- predict(chain, settings, max.date=max.date, 
-                        burnin=100, thin=200)
+                        burnin=pred.burnin, thin=pred.thin)
   
   return(list(phy=phy, pred.dates=pred.dates, tip.dates=tip.dates, 
               censored=censored, chain=chain))
@@ -168,7 +171,9 @@ get.estimates <- function(obj, rt) {
 rmse <- function(obj, true.vals) {
   sapply(1:length(true.vals), function(i) {
     pred <- dt2months(obj$pred.dates[[i]]$int.date)
-    sqrt(mean((pred-true.vals[i])^2))
+    mse <- mean((pred-true.vals[i])^2)
+    var <- mean((pred-mean(pred))^2)
+    bias <- (mean(pred)-true.vals)^2
   })
 }
 
@@ -184,7 +189,7 @@ if (FALSE) {
   rt <- root2tip(phy)
   true.vals <- get.true.values(rt, cf)
   
-  res <- fit.bayroot(tf, cf, settings=settings, nstep=2e4, skip=20)
+  res <- fit.bayroot(tf, cf, settings=settings, nstep=1e5, skip=20)
   
   # display results
   #pdf(file="~/slides/img/latent2.1.compare.pdf", width=5, height=4)
@@ -209,7 +214,8 @@ if (FALSE) {
 
 
 # batch processing
-results <- data.frame(filename=files, rtt=NA, bayroot=NA)
+#results <- data.frame(filename=files, rtt=NA, bayroot=NA)
+timing <- matrix(NA, nrow=length(files), ncol=2)
 for(i in 1:length(files)) {
   tf <- files[i]
   print(tf)
@@ -225,7 +231,10 @@ for(i in 1:length(files)) {
   results$rtt[i] <- sqrt(mean((rt$pred-true.vals)^2))
   
   # Bayesian
+  t0 <- Sys.time()
   res <- fit.bayroot(tf, cf, settings=settings, nstep=2e4, skip=20)
+  t1 <- Sys.time()
+  timing[i, 1] <- as.double(t1-t0)
   write.csv(res$chain$log, file=logfile)
   con <- file(treefile)
   writeLines(res$chain$treelog, con)
@@ -233,7 +242,10 @@ for(i in 1:length(files)) {
   #res <- read.csv(logfile)
   
   est <- get.estimates(res, rt)
-  results$bayroot[i] <- sqrt(mean((est$est - true.vals)^2))  
+  t2 <- Sys.time()
+  timing[i, 2] <- as.double(t2-t1)
+  
+  results$bayroot[i] <- sqrt(mean((est$est - true.vals)^2))  # RMSE
 }
 
 write.csv(results, "~/git/bayroot/sim-rtt-results2.csv")
