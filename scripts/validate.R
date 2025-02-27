@@ -4,9 +4,10 @@
 
 require(chemCal)  # for inverse.predict
 require(ape)
-setwd("~/git/bayroot")
-source("bayroot.R")
+#setwd("~/git/bayroot")
+#source("bayroot.R")
 require(lubridate)
+source("scripts/rtt.R")
 
 #' Fit root-to-tip regression to tree
 #' @param phy:  an object of class 'phylo' (ape)
@@ -78,7 +79,7 @@ plot.root2tip <- function(obj, true.vals, col='red', ...) {
 #' @param settings:
 #' @param max.date: upper limit on predicted integration dates, usually
 #'                  the start of ART
-fit.bayroot <- function(treefile, csvfile, settings,
+fit.bayroot <- function(treefile, csvfile, settings, echo=FALSE,
                         max.date=as.Date("2000-11-01"),  # ART at 10 mo
                         #max.date=as.Date("2001-04-01"),  # ART at 15 mo
                         nstep=1e4, skip=10, pred.burnin=100, pred.thin=200) {
@@ -173,8 +174,6 @@ rmse <- function(obj, true.vals) {
   })
 }
 
-files <- Sys.glob("data/latent2.*.ft2.nwk")
-
 
 if (FALSE) {
   # try one replicate first
@@ -208,57 +207,62 @@ if (FALSE) {
 }
 
 
-# batch processing
-#results <- data.frame(filename=files, rtt=NA, bayroot=NA)
-timing <- matrix(NA, nrow=length(files), ncol=2)
-for(i in 1:length(files)) {
-  tf <- files[i]
-  print(tf)
-  cf <- gsub("\\.cens\\.nwk\\.fas\\.ft2\\.nwk", ".times.csv", tf)
-  logfile <- gsub("\\.cens\\.nwk\\.fas\\.ft2\\.nwk", ".log.csv", tf)
-  treefile <- gsub("\\.cens\\.nwk\\.fas\\.ft2\\.nwk", ".treelog.nwk", tf)
+if (FALSE) {
+  # batch processing
+  files <- Sys.glob("data/latent2.*.ft2.nwk")
   
-  phy <- read.tree(tf)
+  #results <- data.frame(filename=files, rtt=NA, bayroot=NA)
+  timing <- matrix(NA, nrow=length(files), ncol=2)
+  for(i in 1:length(files)) {
+    tf <- files[i]
+    print(tf)
+    cf <- gsub("\\.cens\\.nwk\\.fas\\.ft2\\.nwk", ".times.csv", tf)
+    logfile <- gsub("\\.cens\\.nwk\\.fas\\.ft2\\.nwk", ".log.csv", tf)
+    treefile <- gsub("\\.cens\\.nwk\\.fas\\.ft2\\.nwk", ".treelog.nwk", tf)
+    
+    phy <- read.tree(tf)
+    
+    # root to tip
+    rt <- root2tip(phy)
+    true.vals <- get.true.values(rt, cf)
+    results$rtt[i] <- sqrt(mean((rt$pred-true.vals)^2))
+    
+    # Bayesian
+    t0 <- Sys.time()
+    res <- fit.bayroot(tf, cf, settings=settings, nstep=2e4, skip=20)
+    t1 <- Sys.time()
+    timing[i, 1] <- as.double(t1-t0)
+    write.csv(res$chain$log, file=logfile)
+    con <- file(treefile)
+    writeLines(res$chain$treelog, con)
+    close(con)
+    #res <- read.csv(logfile)
+    
+    est <- get.estimates(res, rt)
+    t2 <- Sys.time()
+    timing[i, 2] <- as.double(t2-t1)
+    
+    results$bayroot[i] <- sqrt(mean((est$est - true.vals)^2))  # RMSE
+  }
   
-  # root to tip
-  rt <- root2tip(phy)
-  true.vals <- get.true.values(rt, cf)
-  results$rtt[i] <- sqrt(mean((rt$pred-true.vals)^2))
+  write.csv(results, "~/git/bayroot/sim-rtt-results2.csv")
   
-  # Bayesian
-  t0 <- Sys.time()
-  res <- fit.bayroot(tf, cf, settings=settings, nstep=2e4, skip=20)
-  t1 <- Sys.time()
-  timing[i, 1] <- as.double(t1-t0)
-  write.csv(res$chain$log, file=logfile)
-  con <- file(treefile)
-  writeLines(res$chain$treelog, con)
-  close(con)
-  #res <- read.csv(logfile)
+  # concordance in RMSE
+  par(mar=c(5,5,1,1))
+  plot(results$rtt, results$bayroot, xlim=c(0, 4), ylim=c(0, 4))
+  abline(a=0, b=1, lty=2)
   
-  est <- get.estimates(res, rt)
-  t2 <- Sys.time()
-  timing[i, 2] <- as.double(t2-t1)
+  wilcox.test(results$rtt, results$bayroot, paired=T)
+  #Wilcoxon signed rank test with continuity correction
+  #
+  #data:  results$rtt and results$bayroot
+  #V = 1008, p-value = 0.0003547
+  #alternative hypothesis: true location shift is not equal to 0
   
-  results$bayroot[i] <- sqrt(mean((est$est - true.vals)^2))  # RMSE
+  png("~/slides/img/bayroot-slopegraph2.png", width=4*150, height=6*150, res=150)
+  par(family='Palatino', mar=c(4,4,1,1))
+  slopegraph(results$rtt, results$bayroot, names.arg=c('RTT', 'bayroot'), 
+             colorize=T, type='l', ylab="Root mean square error", shim=0)
+  dev.off()
 }
 
-write.csv(results, "~/git/bayroot/sim-rtt-results2.csv")
-
-# concordance in RMSE
-par(mar=c(5,5,1,1))
-plot(results$rtt, results$bayroot, xlim=c(0, 4), ylim=c(0, 4))
-abline(a=0, b=1, lty=2)
-
-wilcox.test(results$rtt, results$bayroot, paired=T)
-#Wilcoxon signed rank test with continuity correction
-#
-#data:  results$rtt and results$bayroot
-#V = 1008, p-value = 0.0003547
-#alternative hypothesis: true location shift is not equal to 0
-
-png("~/slides/img/bayroot-slopegraph2.png", width=4*150, height=6*150, res=150)
-par(family='Palatino', mar=c(4,4,1,1))
-slopegraph(results$rtt, results$bayroot, names.arg=c('RTT', 'bayroot'), 
-           colorize=T, type='l', ylab="Root mean square error", shim=0)
-dev.off()
